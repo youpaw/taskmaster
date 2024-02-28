@@ -1,0 +1,4 @@
+tasks:
+  basic:
+    cmd: 'cat'
+    fd: 1

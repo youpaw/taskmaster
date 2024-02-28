@@ -5,12 +5,11 @@ class Shell:
     def __init__(self):
         pass
 
-    def read(self):
+    @staticmethod
+    def read(queue: Queue):
         while True:
-            command = input("")
-
-    def read_command(self):
-        pass
-
-    def run(self, queue: Queue):
-        pass
+            try:
+                command = input()
+                queue.put(command)
+            except EOFError as exc:
+                print(exc)
