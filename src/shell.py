@@ -1,15 +1,27 @@
-from multiprocessing import Queue
+import socket
 
 
 class Shell:
-    def __init__(self):
-        pass
+    def __init__(self, sock_file: str):
+        self.sock_file = sock_file
+        # flush stdout
+        print("Taskmaster shell started.")
 
-    @staticmethod
-    def read(queue: Queue):
+
+    def run(self):
         while True:
-            try:
-                command = input()
-                queue.put(command)
-            except EOFError as exc:
-                print(exc)
+            cmd = input("taskmaster> ")
+            if cmd == "exit":
+                break
+            else:
+                self.send_command(cmd)
+
+    def send_command(self, cmd: str):
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.connect(self.sock_file)
+            s.sendall(cmd.encode())
+            response = s.recv(1024)
+            print(response.decode(), end="")
+
+
+
