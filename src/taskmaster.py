@@ -5,10 +5,11 @@ from multiprocessing import Process
 from server import Server
 from shell import Shell
 
-DEFAULT_CONFIG_FILE_PATH = "taskmaster.yaml"
-DEFAULT_LOG_FILE_PATH = "taskmaster.log"
-DEFAULT_PID_FILE_PATH = "taskmaster.pid"
-DEFAULT_SOCKET_FILE_PATH = "taskmaster.sock"
+cur_path = os.path.dirname(os.path.abspath(__file__))
+DEFAULT_CONFIG_FILE_PATH = cur_path + "/taskmaster.yaml"
+DEFAULT_LOG_FILE_PATH = cur_path + "/taskmaster.log"
+DEFAULT_PID_FILE_PATH = cur_path + "/taskmaster.pid"
+DEFAULT_SOCKET_FILE_PATH = cur_path + "/taskmaster.sock"
 
 
 def main(arguments: argparse.Namespace):
@@ -22,17 +23,17 @@ def main(arguments: argparse.Namespace):
     pid_file = arguments.pid_file
     socket_file = arguments.socket_file
     if not os.path.exists(log_file):
-        with open(log_file, "w+") as f:
+        with open(log_file, "a+") as f:
             f.write("")
+        log_file = os.path.abspath(log_file)
     if check_pid_file(pid_file):
         print("Taskmaster is already running.")
         return
     else:
-        Process(target=Server.start_daemon, args=(config_file, socket_file, log_file, pid_file), daemon=True).start()
-        # Server.start_daemon(config_file, socket_file, log_file, pid_file)
-        print("Taskmaster started.")
-    shell = Shell(DEFAULT_SOCKET_FILE_PATH)
-    shell.run()
+        server = Server(config_file, socket_file, log_file, pid_file)
+        server.run()
+        inp = input("Taskmaster started. You can type some command\n")
+        print(f"You typed {inp}. Cool shell, ah?")
 
 
 def check_pid_file(pid_file: str):

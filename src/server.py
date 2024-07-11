@@ -1,4 +1,5 @@
 import os
+import time
 
 import lockfile
 from daemon import DaemonContext
@@ -10,21 +11,30 @@ ERROR_RESPONSE = b"ERROR"
 
 class Server(UnixStreamServer):
     def __init__(self, config_path: str, sock_file: str, log_file: str, pid_file: str):
-        super().__init__(sock_file, CmdHandler)
-        self.config_path = config_path
+        # UnixStreamServer.__init__(self, sock_file, CmdHandler)
+        # Daemon.__init__(self, pid_file)
+        # self.config_path = config_path
+        # self.log_file = log_file
+        # self.pid_file_path = pid_file
+        # super().__init__(sock_file, CmdHandler)
         self.log_file = log_file
-        self.pid_file_path = pid_file
-        # self.context = DaemonContext(
-        #     pidfile=pid_file, #signal_map={signal.SIGTERM: self.shutdown}
-        # )
+        self.context = DaemonContext()
         print(f"Inited server with config: {config_path}, log: {log_file}, pid: {pid_file}")
 
-    @classmethod
-    def start_daemon(cls, *args, **kwargs):
-        server = cls(*args, **kwargs)
-        print(f"Demonizing server. New pid: {os.getpid()}")
-        # server.context.open()
-        server.serve_forever()
+    def run(self):
+        pid = os.fork()
+        if pid > 0:
+            print("Parent process")
+        else:
+            self._run()
+
+    def _run(self):
+        i = 0
+        while True:
+            with open(self.log_file, "a+") as f:
+                f.write(f"Daemon with pid {os.getpid()} running for {i} seconds\n")
+            time.sleep(1)
+            i += 1
 
 
 class CmdHandler(StreamRequestHandler):
