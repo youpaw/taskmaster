@@ -30,11 +30,12 @@ def main(arguments: argparse.Namespace):
         print("Taskmaster is already running.")
         return
     else:
-        server = Server(config_file, socket_file, log_file, pid_file)
-        server.run()
-        inp = input("Taskmaster started. You can type some command\n")
-        print(f"You typed {inp}. Cool shell, ah?")
-
+        Server.run_in_background(config_file, socket_file, log_file, pid_file)
+    print("Taskmaster started. Start the shell.")
+    shell = Shell(socket_file)
+    shell.run()
+    # inp = input("Press Enter to start the shell.")
+    # print("Starting the shell. (Joking, not implemented yet.)")
 
 def check_pid_file(pid_file: str):
     pass
