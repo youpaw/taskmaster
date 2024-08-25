@@ -7,10 +7,10 @@ import lockfile
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
 import signal
+import json
 
-OK_RESPONSE = b"OK"
-ERROR_RESPONSE = b"ERROR"
-
+BUFFER_SIZE = 1024
+MSG_ENCODING = 'utf-8'
 
 class Server(UnixStreamServer):
     def __init__(self, config_path: str, sock_file: str, log_file: str):
@@ -72,16 +72,17 @@ class Server(UnixStreamServer):
 
 class CmdHandler(StreamRequestHandler):
     def handle(self):
-        data = self.request.recv(1024).strip()
-        data = data.decode("utf-8")
+        data = self.request.recv(BUFFER_SIZE).strip()
+        cmd_data = json.loads(data.decode(MSG_ENCODING))
         with open(self.server.log_file, "a") as f:
-            f.write(f"Received command: {data}\n")
-        func = getattr(self.server, data, None)
+            f.write(f"Received command: {cmd_data}\n")
+        func = getattr(self.server, cmd_data["cmd"], None)
         if func:
             with open(self.server.log_file, "a") as f:
                 f.write(f"Executing command: {func}\n")
-            func(self)
-            self.wfile.write(OK_RESPONSE)
+            msg = func(self)
+            resp_data = {"msg": msg, "status": 0}
         else:
-            self.wfile.write(ERROR_RESPONSE)
-        self.wfile.write(b"\n")
+            resp_data = {"msg": "command not found", "status": 1}
+        json_resp = json.dumps(resp_data)
+        self.wfile.write(json_resp.encode(MSG_ENCODING))
