@@ -35,6 +35,7 @@ def main(arguments: argparse.Namespace):
     shell = Shell(socket_file)
     shell.run()
 
+
 def check_pid_file(pid_file: str):
     pass
 

@@ -1,4 +1,5 @@
-tasks:
+programs:
   basic:
     cmd: 'cat'
     fd: 1
+    autostart: False
