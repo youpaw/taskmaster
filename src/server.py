@@ -17,20 +17,11 @@ class Server(UnixStreamServer):
     def __init__(self, config_path: str, sock_file: str, log_file: str):
         super().__init__(sock_file, CmdHandler)
         self.config = Configuration(config_path)
-        self.monitor = Monitor(self.config)
+        # self.monitor = Monitor(self.config)
         self.sock_file = sock_file
         self.log_file = log_file
-        self.config.update_config()
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGHUP, self.reload_config)
-
-    def mock_server(self):
-        i = 0
-        while True:
-            with open(self.log_file, "a") as f:
-                f.write(f"Server is running {i}.\n")
-            i += 1
-            time.sleep(1)
 
     @classmethod
     def run_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
@@ -45,9 +36,9 @@ class Server(UnixStreamServer):
             pidfile=lockfile.FileLock(pid_file) # TODO idk about lockfile, it's from doc. Check it.
         ):
             # uncomment to redirect stdout and stderr to a current terminal
-            # out = open("/dev/pts/2", "w")
-            # sys.stderr = out
-            # sys.stdout = out
+            out = open("/dev/pts/0", "w")
+            sys.stderr = out
+            sys.stdout = out
             with open(log_file, "a") as f:
                 f.write(f"Server started at {time.ctime()}.\n")
             server = cls(config_path, sock_file, log_file)
@@ -64,6 +55,10 @@ class Server(UnixStreamServer):
         with open(self.log_file, "a") as f:
             f.write("Reloading the configuration.\n")
 
+    def status(self):
+        """Show the status of programs."""
+        pass
+
     def _stop(self):
         """Actually stop the server."""
         self.shutdown()  # look shutdown method in parent server class
@@ -74,6 +69,9 @@ class Server(UnixStreamServer):
 
 
 class CmdHandler(StreamRequestHandler):
+    def validate_command(self, cmd: str):
+        pass
+
     def handle(self):
         data = self.request.recv(BUFFER_SIZE).strip()
         cmd_data = json.loads(data.decode(MSG_ENCODING))
