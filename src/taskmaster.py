@@ -34,8 +34,6 @@ def main(arguments: argparse.Namespace):
     print("Taskmaster started. Start the shell.")
     shell = Shell(socket_file)
     shell.run()
-    # inp = input("Press Enter to start the shell.")
-    # print("Starting the shell. (Joking, not implemented yet.)")
 
 def check_pid_file(pid_file: str):
     pass
