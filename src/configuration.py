@@ -7,7 +7,6 @@ import yaml
 @dataclass
 class Program:
     cmd: str
-    numprocs: int = None
     autostart: bool = False
     autorestart: str = "never"
     exitcodes: list = field(default_factory=lambda: [0])
@@ -48,7 +47,16 @@ class Configuration:
             try:
                 if name in config:
                     raise ValueError(f"Duplicate program name: {name}")
-                config[name]: Program(**attributes)
+                num_procs = attributes.pop("numprocs", None)
+                if num_procs:
+                    if not isinstance(num_procs, int):
+                        raise TypeError(f"numprocs must be an integer, not {type(num_procs)}")
+                    if num_procs < 2:
+                        raise ValueError("numprocs must be greater than 1")
+                    for i in range(num_procs):
+                        config[f"{name}_{i + 1}"] = Program(**attributes)
+                else:
+                    config[name] = Program(**attributes)
             except TypeError as e:
                 print(f"Error in program {name}: {e}")
                 return None
@@ -56,7 +64,8 @@ class Configuration:
         return config
 
 
-if __name__ == "__main__":
-    # conf = Configuration("/home/kosyan62/PycharmProjects/taskmaster/test/base.yaml")
-    pr1 = Program(cmd="ls -l", numprocs=2, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)
-    pr2 = Program(cmd="ls -l", numprocs=1, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)
+# if __name__ == "__main__":
+#     conf = Configuration("/home/kosyan62/PycharmProjects/taskmaster/test/base.yaml")
+#     print(conf.config)
+    # pr1 = Program(cmd="ls -l", numprocs=2, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)
+    # pr2 = Program(cmd="ls -l", numprocs=1, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)
