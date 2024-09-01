@@ -75,6 +75,15 @@ class Task:
             # self.check_stop()
             pass
 
+    def is_running(self):
+        return self._status in ["STARTING", "STOPPING", "RESTARTING", "RUNNING"]
+
+    def is_done(self):
+        return self._status in ["SUCCEEDED", "FAILED"]
+
+    def is_idle(self):
+        return self._status == "CREATED"
+
 class MonitorError(Exception):
     def __init__(self, message):
         self.message = message
@@ -84,37 +93,37 @@ class Monitor:
     def __init__(self, config: Configuration):
         self.config = config
         self.active_tasks = []
+        self.running_tasks = []
+        # ToDo running list and active list?
         self.old_tasks = []
         self.tasks = {}
 
     def start_by_name(self, name: str):
         if name not in self.tasks:
             raise MonitorError(f"Task {name} does not exist.")
-        self._start_task(name, self.tasks[name])
-
-    def start(self):
-        """Start all tasks."""
-        active_ids = set(self.active_tasks)
-        all_ids = set(self.tasks.keys())
-        start_ids = all_ids - active_ids
-        for name in start_ids:
-            try:
-                self._start_task(name, self.tasks[name])
-            except MonitorError as _:
-                pass
-
-    def _start_task(self, name: str, task: Task):
-        if task in self.active_tasks or task.status == "STOPPING":
-            raise MonitorError(f"Task {name} is running.")
-        elif task.status == "FAILED" or task.status == "SUCCEEDED":
-            raise MonitorError(f"Task {name} is already finished.")
-        elif task.status == "RESTARTING":
-            raise MonitorError(f"Task {name} is restarting.")
+        task = self.tasks[name]
+        if task.is_running():
+            raise MonitorError(f"Task {name} is busy.")
+        elif task.is_done():
+            raise MonitorError(f"Task {name} has already finished.")
         task.start()
-        self.active_tasks.append(name)
+
+    def start(self) -> int:
+        """Start all tasks."""
+        counter = 0
+        for name in self.active_tasks:
+            task = self.tasks[name]
+            if task.is_idle():
+                task.start()
+                counter += 1
+        return counter
 
     def stop(self):
         """Stop all tasks."""
+        pass
+
+    def restart(self):
+        """Restart all tasks."""
         pass
 
     def update(self):
@@ -154,13 +163,14 @@ class Monitor:
         self.tasks[name] = task = Task(program)
         if program.autostart:
             task.start()
-            self.active_tasks.append(name)
+        self.active_tasks.append(name)
 
     def _retire_task(self, name: str):
         task = self.tasks.pop(name)
         if name in self.active_tasks:
             self.active_tasks.remove(name)
-            task.stop()
+            if task.is_running():
+                task.stop()
             self.old_tasks.append(task)
 
 
