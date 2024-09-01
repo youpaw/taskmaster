@@ -6,6 +6,7 @@ import time
 import lockfile
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
+from configuration import Configuration
 import signal
 import json
 
@@ -15,9 +16,11 @@ MSG_ENCODING = 'utf-8'
 class Server(UnixStreamServer):
     def __init__(self, config_path: str, sock_file: str, log_file: str):
         super().__init__(sock_file, CmdHandler)
-        self.config_path = config_path # TODO ipmlement config class
+        self.config = Configuration(config_path)
+        self.monitor = Monitor(self.config)
         self.sock_file = sock_file
         self.log_file = log_file
+        self.config.update_config()
         signal.signal(signal.SIGTERM, self.stop)
         signal.signal(signal.SIGHUP, self.reload_config)
 
