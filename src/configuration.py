@@ -30,22 +30,22 @@ class Configuration:
 
     def __init__(self, config_path: str):
         self.config_path = config_path
-        self.config = self.from_yaml()
+        self.programs = self.from_yaml()
 
     def reload_config(self):
-        self.config = self.from_yaml()
+        self.programs = self.from_yaml()
 
     def from_yaml(self):
         with open(self.config_path, "r") as f:
             data = yaml.safe_load(f)
-        programs = data.get(self.program_section)
+        program_configs = data.get(self.program_section)
 
-        if not programs:
+        if not program_configs:
             raise ValueError("No programs section in the configuration.")
-        config = {}
-        for name, attributes in programs.items():
+        programs = {}
+        for name, attributes in program_configs.items():
             try:
-                if name in config:
+                if name in programs:
                     raise ValueError(f"Duplicate program name: {name}")
                 num_procs = attributes.pop("numprocs", None)
                 if num_procs:
@@ -54,14 +54,14 @@ class Configuration:
                     if num_procs < 2:
                         raise ValueError("numprocs must be greater than 1")
                     for i in range(num_procs):
-                        config[f"{name}_{i + 1}"] = Program(**attributes)
+                        programs[f"{name}_{i + 1}"] = Program(**attributes)
                 else:
-                    config[name] = Program(**attributes)
+                    programs[name] = Program(**attributes)
             except TypeError as e:
                 print(f"Error in program {name}: {e}")
                 return None
 
-        return config
+        return programs
 
 
 # if __name__ == "__main__":

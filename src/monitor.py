@@ -79,6 +79,8 @@ class Task:
 class Monitor:
     def __init__(self, config: Configuration):
         self.config = config
+        self.active_tasks = []
+        self.old_tasks = []
         self.tasks = {}
 
     def start(self):
@@ -89,7 +91,7 @@ class Monitor:
             self.tasks[name] = task
 
     def stop(self):
-        """Stop all programs."""
+        """Stop all tasks."""
         pass
 
     def reload_config(self):
@@ -97,9 +99,30 @@ class Monitor:
         old_config = self.config
         self.config.reload_config()
         new_config = self.config
-        # compare old and new config and restart changed programs
-        pass
-
+        old_ids = set(old_config.programs.keys())
+        new_ids = set(new_config.programs.keys())
+        added_ids = new_ids - old_ids
+        for name in added_ids:
+            self.tasks[name] = task = Task(new_config.programs[name])
+            if new_config.programs[name].autostart:
+                task.start()
+                self.active_tasks.append(name)
+        removed_ids = old_ids - new_ids
+        for name in removed_ids:
+            task = self.tasks.pop(name)
+            if name in self.active_tasks:
+                self.active_tasks.remove(name)
+                task.stop()
+            self.old_tasks.append(task)
+        intersect_ids = new_ids & old_ids
+        for name in intersect_ids:
+            if old_config.programs[name] == new_config.programs[name]:
+                continue
+            task = self.tasks.pop(name)
+            if name in self.active_tasks:
+                self.active_tasks.remove(name)
+                task.stop()
+            self.old_tasks.append(task)
 
 if __name__ == "__main__":
     conf = Configuration("/home/kosyan62/PycharmProjects/taskmaster/test/base.yaml")
