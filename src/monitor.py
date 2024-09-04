@@ -8,7 +8,7 @@ import time
 class Task:
     def __init__(self, program: Program):
         self.program = program
-        self.process = None
+        self.process: subprocess.Popen = None
         self.start_time = None
         self.stop_time = None
         self.restart_count = 0
@@ -58,7 +58,17 @@ class Task:
         if self.status == "STOPPED":
             return
         self._status = "STOPPING"
-        pass
+        self.stop_time = time.time()
+        self.process.send_signal(self.program.stopsignal)
+
+    def check_stop(self):
+        """Check if the program has stopped."""
+        return_code = self.process.poll()
+        if return_code is not None:
+            self._status = "STOPPED"
+        else:
+            if time.time() - self.stop_time > self.program.stopwaitsecs:
+                self.process.kill()
 
     def restart(self):
         """Restart the program. Status becomes RESTARTING."""
@@ -84,10 +94,12 @@ class Task:
     def is_idle(self):
         return self._status == "CREATED"
 
+
 class MonitorError(Exception):
     def __init__(self, message):
         self.message = message
         super().__init__(self.message)
+
 
 class Monitor:
     def __init__(self, config: Configuration):
@@ -172,15 +184,3 @@ class Monitor:
             if task.is_running():
                 task.stop()
             self.old_tasks.append(task)
-
-
-if __name__ == "__main__":
-    conf = Configuration("/home/kosyan62/PycharmProjects/taskmaster/test/base.yaml")
-    print(conf.config)
-    monitor = Monitor(conf)
-    monitor.start()
-    print(monitor.tasks)
-    time.sleep(15)
-    for _task in monitor.tasks.values():
-        _task.update_status()
-    print(monitor.tasks)

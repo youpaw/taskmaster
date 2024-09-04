@@ -3,22 +3,25 @@ import sys
 import threading
 import time
 
-import lockfile
+import atexit
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
-from configuration import Configuration
-from monitor import Monitor
 import signal
 import json
 
 BUFFER_SIZE = 1024
 MSG_ENCODING = 'utf-8'
 
+
+def clean_up(*files):
+    for file in files:
+        if os.path.exists(file):
+            os.remove(file)
+
+
 class Server(UnixStreamServer):
     def __init__(self, config_path: str, sock_file: str, log_file: str):
         super().__init__(sock_file, CmdHandler)
-        self.config = Configuration(config_path)
-        self.monitor = Monitor(self.config)
         self.sock_file = sock_file
         self.log_file = log_file
         signal.signal(signal.SIGTERM, self.stop)
@@ -33,17 +36,16 @@ class Server(UnixStreamServer):
             print(f"Server started in the background at {time.ctime()}.")
             return
         # Child process.
-        with DaemonContext(
-            pidfile=lockfile.FileLock(pid_file) # TODO idk about lockfile, it's from doc. Check it.
-        ):
+        with DaemonContext():
             # uncomment to redirect stdout and stderr to a current terminal
             out = open("/dev/pts/0", "w")
             sys.stderr = out
             sys.stdout = out
             with open(log_file, "a") as f:
                 f.write(f"Server started at {time.ctime()}.\n")
-            server = cls(config_path, sock_file, log_file)
-            server.serve_forever()
+            with cls(config_path, sock_file, log_file) as server:
+                atexit.register(clean_up, pid_file, sock_file)
+                server.serve_forever()
             with open(log_file, "a") as f:
                 f.write(f"Server stopped at {time.ctime()}.")
 
