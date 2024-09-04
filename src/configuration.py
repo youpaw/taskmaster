@@ -12,7 +12,7 @@ class Program:
     exitcodes: list = field(default_factory=lambda: [0])
     startsecs: int = 0
     startretries: int = 3
-    stopsignal: str = signal.SIGTERM
+    stopsignal: int = signal.SIGTERM
     stopwaitsecs: int = 10
     stdout: str = None
     stderr: str = None
