@@ -66,9 +66,20 @@ class Task:
         return_code = self.process.poll()
         if return_code is not None:
             self._status = "STOPPED"
+            self.process.wait()
         else:
-            if time.time() - self.stop_time > self.program.stopwaitsecs:
+            if not self.program.stopwaitsecs or time.time() - self.stop_time > self.program.stopwaitsecs:
                 self.process.kill()
+
+    def check_running(self):
+        """Check if the program is running."""
+        return_code = self.process.poll()
+        if return_code is not None:
+            self.process.wait()
+            if return_code in self.program.exitcodes:
+                self._status = "SUCCEEDED"
+            else:
+                self._status = "FAILED"
 
     def restart(self):
         """Restart the program. Status becomes RESTARTING."""
@@ -82,8 +93,9 @@ class Task:
         if self._status == "STARTING":
             self.check_start()
         elif self._status == "STOPPING":
-            # self.check_stop()
-            pass
+            self.check_stop()
+        elif self._status == "RUNNING":
+            self.check_running()
 
     def is_running(self):
         return self._status in ["STARTING", "STOPPING", "RESTARTING", "RUNNING"]
@@ -109,6 +121,7 @@ class Monitor:
         # ToDo running list and active list?
         self.old_tasks = []
         self.tasks = {}
+        print("Monitor initialized.")
 
     def start_by_name(self, name: str):
         if name not in self.tasks:
@@ -141,6 +154,7 @@ class Monitor:
     def update(self):
         for name in self.active_tasks:
             self.tasks[name].update_status()
+            print(self.tasks[name])
 
     def reload_config(self):
         """Reload the configuration."""

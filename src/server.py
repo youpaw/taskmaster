@@ -9,6 +9,9 @@ from socketserver import UnixStreamServer, StreamRequestHandler
 import signal
 import json
 
+from configuration import Configuration
+from monitor import Monitor
+
 BUFFER_SIZE = 1024
 MSG_ENCODING = 'utf-8'
 
@@ -20,15 +23,33 @@ def clean_up(*files):
 
 
 class Server(UnixStreamServer):
-    def __init__(self, config_path: str, sock_file: str, log_file: str):
+    allowed_cmds = ["start", "stop", "restart", "status"]
+
+    def __init__(self, config_path: str, sock_file: str, log_file: str, pid_file: str):
+        """Initialize the server."""
         super().__init__(sock_file, CmdHandler)
+        self.config_path = config_path
         self.sock_file = sock_file
         self.log_file = log_file
+        self.pid_file = pid_file
+        self.configuration = None
+        self.monitor = None
+
+    def startup(self):
+        """Load the configuration and monitor."""
         signal.signal(signal.SIGTERM, self.stop)
-        signal.signal(signal.SIGHUP, self.reload_config)
+        signal.signal(signal.SIGHUP, self.reload)
+        self.configuration = Configuration(self.config_path)
+        self.monitor = Monitor(self.configuration)
+        self.monitor.reload_config()
+        atexit.register(clean_up, self.pid_file, self.sock_file)
+
+    def service_actions(self):
+        """Update the status of programs."""
+        self.monitor.update()
 
     @classmethod
-    def run_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
+    def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
         """Start the server in the background."""
         pid = os.fork()
         if pid > 0:
@@ -37,38 +58,38 @@ class Server(UnixStreamServer):
             return
         # Child process.
         with DaemonContext():
+            if os.path.exists(pid_file):
+                raise ValueError("Server is already running.")
             # uncomment to redirect stdout and stderr to a current terminal
             out = open("/dev/pts/0", "w")
             sys.stderr = out
             sys.stdout = out
             with open(log_file, "a") as f:
                 f.write(f"Server started at {time.ctime()}.\n")
-            with cls(config_path, sock_file, log_file) as server:
-                atexit.register(clean_up, pid_file, sock_file)
+
+            with cls(config_path, sock_file, log_file, pid_file) as server:
+                server.startup()
                 server.serve_forever()
             with open(log_file, "a") as f:
                 f.write(f"Server stopped at {time.ctime()}.")
 
     def stop(self, signum=None, frame=None):
-        """Stop the server."""
-        threading.Thread(target=self._stop).start()  # look shutdown method in base class
+        def _stop():
+            """Actually stop the server."""
+            self.shutdown()  # look shutdown method in parent server class
 
-    def reload_config(self, signum=None, frame=None):
+        """Stop the server."""
+        threading.Thread(target=_stop).start()  # look shutdown method in base class
+
+    def reload(self, signum=None, frame=None):
         """Reload the configuration."""
         with open(self.log_file, "a") as f:
             f.write("Reloading the configuration.\n")
+        self.monitor.reload_config()
 
     def status(self):
         """Show the status of programs."""
-        pass
-
-    def _stop(self):
-        """Actually stop the server."""
-        self.shutdown()  # look shutdown method in parent server class
-        os.remove(self.sock_file)
-        with open(self.log_file, "a") as f:
-            f.write("Socket file removed.\n")
-        sys.exit(0)
+        return self.monitor.status()
 
 
 class CmdHandler(StreamRequestHandler):

@@ -1,8 +1,8 @@
 programs:
   alive:
     cmd: 'cat'
-    autostart: False
+    autostart: True
 
   simple:
-    cmd: 'sleep 1'
+    cmd: 'sleep 10'
     autostart: True

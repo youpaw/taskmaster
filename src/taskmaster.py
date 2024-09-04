@@ -14,7 +14,7 @@ DEFAULT_SOCKET_FILE_PATH = cur_path + "/taskmaster.sock"
 
 def main(config: str, socket: str, log: str, pid: str):
     try:
-        Server.run_in_background(
+        Server.start_in_background(
             config_path=config,
             sock_file=socket,
             log_file=log,
