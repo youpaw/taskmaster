@@ -23,7 +23,16 @@ def clean_up(*files):
 
 
 class Server(UnixStreamServer):
-    allowed_cmds = ["start", "stop", "restart", "status"]
+    allowed_cmds = ["start", "stop", "restart", "status", "reload", "stop_server", "help"]
+    commands_info = {
+        "start": "Start a program",
+        "stop": "Stop a program",
+        "restart": "Restart a program",
+        "status": "Show the status of programs",
+        "reload": "Reload the configuration",
+        "stop_server": "Stop the server",
+        "help": "Show the available commands"
+    }
 
     def __init__(self, config_path: str, sock_file: str, log_file: str, pid_file: str):
         """Initialize the server."""
@@ -73,41 +82,89 @@ class Server(UnixStreamServer):
             with open(log_file, "a") as f:
                 f.write(f"Server stopped at {time.ctime()}.")
 
-    def stop(self, signum=None, frame=None):
+    # Server commands which can be sent via the socket
+
+    def start(self, program_name: str):
+        """Start a program."""
+        raise NotImplementedError
+
+    def stop(self, program_name: str):
+        """Stop a program."""
+        raise NotImplementedError
+
+    def restart(self, program_name: str):
+        """Restart a program."""
+        raise NotImplementedError
+
+    def stop_server(self, signum=None, frame=None):
+        """Stop the server."""
+
         def _stop():
             """Actually stop the server."""
             self.shutdown()  # look shutdown method in parent server class
 
-        """Stop the server."""
-        threading.Thread(target=_stop).start()  # look shutdown method in base class
+        threading.Thread(target=_stop).start()  # Check shutdown method in base class
+        return "Server stopped."
 
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
         with open(self.log_file, "a") as f:
             f.write("Reloading the configuration.\n")
         self.monitor.reload_config()
+        return "Configuration reloaded."
 
     def status(self):
         """Show the status of programs."""
-        return self.monitor.status()
+        status_msg = "Programs status:\n"
+        for name, task in self.monitor.tasks.items():
+            status_msg += f"{name}: {task.status}\n"
+        return status_msg
+
+    def help(self):
+        """Show the available commands."""
+        help_msg = "Available commands:\n"
+        for cmd in self.allowed_cmds:
+            help_msg += f"{cmd}: {self.commands_info.get(cmd, 'No info')}\n"
+        return help_msg
 
 
 class CmdHandler(StreamRequestHandler):
-    def validate_command(self, cmd: str):
-        pass
+
+    def parse_request(self, cmd: str) -> tuple or None:
+        try:
+            cmd_data = json.loads(cmd.decode(MSG_ENCODING))
+        except json.JSONDecodeError:
+            return None
+        if not isinstance(cmd_data, dict):
+            return None
+        if "cmd" not in cmd_data:
+            return None
+        if cmd_data["cmd"] not in self.server.allowed_cmds:
+            return None
+        if "args" not in cmd_data:
+            return None
+        if not isinstance(cmd_data["args"], list):
+            return None
+        command = getattr(self.server, cmd_data["cmd"], None)
+        if not command:
+            return None
+        return command, cmd_data["args"]
 
     def handle(self):
         data = self.request.recv(BUFFER_SIZE).strip()
-        cmd_data = json.loads(data.decode(MSG_ENCODING))
-        with open(self.server.log_file, "a") as f:
-            f.write(f"Received command: {cmd_data}\n")
-        func = getattr(self.server, cmd_data["cmd"], None)
-        if func:
-            with open(self.server.log_file, "a") as f:
-                f.write(f"Executing command: {func}\n")
-            msg = func(self)
-            resp_data = {"msg": msg, "status": 0}
-        else:
-            resp_data = {"msg": "command not found", "status": 1}
-        json_resp = json.dumps(resp_data)
-        self.wfile.write(json_resp.encode(MSG_ENCODING))
+        parsed_request = self.parse_request(data)
+        if not parsed_request:
+            response = {"msg": "Invalid command", "status": 1}
+            json_response = json.dumps(response)
+            self.wfile.write(json_response.encode(MSG_ENCODING))
+            return
+
+        command, args = parsed_request
+        try:
+            message = command(*args)
+            response = {"msg": message, "status": 0}
+        except Exception as e:
+            response = {f"msg": f"An error {e} occurred", "status": 1}
+
+        response_json = json.dumps(response)
+        self.wfile.write(response_json.encode(MSG_ENCODING))

@@ -27,12 +27,14 @@ class Shell:
             args = tokens[1:] if len(tokens) > 1 else []
             try:
                 response = self._send_command({"cmd": cmd, "args": args})
-                if response["status"]:
+                if response.get("status"):
                     print(f'daemon: {response["msg"]}: {cmd}', file=sys.stderr)
-                elif response["msg"]:
+                elif response.get("msg"):
                     print(response["msg"])
                 else:
                     print(f"{cmd} success", file=sys.stderr)
+                if cmd == "stop_server" and not response.get("status"):
+                    break
             except SocketError as e:
                 print(e, file=sys.stderr)
 
