@@ -84,17 +84,20 @@ class Server(UnixStreamServer):
 
     # Server commands which can be sent via the socket
 
-    def start(self, program_name: str):
+    def start(self, program_names: list[str]):
         """Start a program."""
-        raise NotImplementedError
+        for program_name in program_names:
+            self.monitor.start_by_name(program_name)
 
-    def stop(self, program_name: str):
+    def stop(self, program_name: list[str]):
         """Stop a program."""
-        raise NotImplementedError
+        for program_name in program_name:
+            self.monitor.stop_by_name(program_name)
 
-    def restart(self, program_name: str):
+    def restart(self, program_name: list[str]):
         """Restart a program."""
-        raise NotImplementedError
+        for program_name in program_name:
+            self.monitor.restart_by_name(program_name)
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
