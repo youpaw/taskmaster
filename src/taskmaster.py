@@ -12,20 +12,22 @@ DEFAULT_PID_FILE_PATH = cur_path + "/taskmaster.pid"
 DEFAULT_SOCKET_FILE_PATH = cur_path + "/taskmaster.sock"
 
 
-def main(config: str, socket: str, log: str, pid: str):
-    try:
-        Server.start_in_background(
-            config_path=config,
-            sock_file=socket,
-            log_file=log,
-            pid_file=pid
-        )
-    except ValueError as e:
-        print(e)
-        exit(1)
-    print("Taskmaster started. Welcome...")
-    shell = Shell(socket)
-    shell.run()
+def main(config: str, socket: str, log: str, pid: str, mode: str):
+    if mode in ("full", "daemon"):
+        try:
+            Server.start_in_background(
+                config_path=config,
+                sock_file=socket,
+                log_file=log,
+                pid_file=pid
+            )
+        except ValueError as e:
+            print(e)
+            exit(1)
+        print("Taskmaster started. Welcome...")
+    if mode in ("full", "shell"):
+        shell = Shell(socket)
+        shell.run()
 
 
 def validate_args(args: argparse.Namespace):
@@ -47,7 +49,7 @@ def validate_args(args: argparse.Namespace):
         print("Socket file already exists.")
         exit(1)
     socket_path = os.path.abspath(args.socket_file)
-    return config_path, log_path, pid_path, socket_path
+    return config_path, log_path, pid_path, socket_path, args.mode
 
 
 if __name__ == "__main__":
@@ -60,7 +62,9 @@ if __name__ == "__main__":
                         default=DEFAULT_PID_FILE_PATH, type=str)
     parser.add_argument('-s', '--socket-file', help='Taskmaster socket file', required=False,
                         default=DEFAULT_SOCKET_FILE_PATH, type=str)
+    parser.add_argument('-m', '--mode', help='Taskmaster start mode', required=False, default="full",
+                        choices=["full", "shell", "daemon"])
 
     arguments = parser.parse_args()
-    config, log, pid, socket = validate_args(arguments)
-    main(config, socket, log, pid)
+    config, log, pid, socket, mode = validate_args(arguments)
+    main(config, socket, log, pid, mode)
