@@ -66,7 +66,7 @@ class Server(UnixStreamServer):
             print(f"Server started in the background at {time.ctime()}.")
             return
         # Child process.
-        with DaemonContext():
+        with DaemonContext(detach_process=False):
             if os.path.exists(pid_file):
                 raise ValueError("Server is already running.")
             # uncomment to redirect stdout and stderr to a current terminal
