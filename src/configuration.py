@@ -1,3 +1,4 @@
+import logging.config
 import signal
 from dataclasses import dataclass, Field, field
 
@@ -30,10 +31,13 @@ class Configuration:
 
     def __init__(self, config_path: str):
         self.config_path = config_path
+        self.logger = logging.getLogger("Configuration")
         self.programs = self.from_yaml()
 
     def reload_config(self):
+        self.logger.info("Reloading configuration.")
         self.programs = self.from_yaml()
+        self.logger.info("Configuration reloaded.")
 
     def from_yaml(self):
         with open(self.config_path, "r") as f:

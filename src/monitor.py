@@ -1,3 +1,5 @@
+import logging
+
 from configuration import Program, Configuration
 import subprocess
 import time
@@ -133,7 +135,8 @@ class Monitor:
         self.active_tasks = set()
         self.old_tasks = set()
         self.tasks = {}
-        print("Monitor initialized.")
+        self.logger = logging.getLogger("Monitor")
+        self.logger.info("Monitor initialized.")
 
     def start_by_name(self, name: str):
         task = self._get_task_by_name(name)

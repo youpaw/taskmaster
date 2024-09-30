@@ -8,6 +8,8 @@ from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
 import signal
 import json
+import logging
+import logging.config
 
 from configuration import Configuration
 from monitor import Monitor
@@ -33,29 +35,53 @@ class Server(UnixStreamServer):
         "stop_server": "Stop the server",
         "help": "Show the available commands"
     }
+    # Default logging configuration with disabled loggers
+    default_log_config = {
+        "version": 1,
+        "disable_existing_loggers": True,
+        "loggers": {
+            "Server": {
+                "disabled": True
+            },
+            "Monitor": {
+                "disabled": True
+            },
+            "Shell": {
+                "disabled": True
+            },
+        },
+    }
 
-    def __init__(self, config_path: str, sock_file: str, log_file: str, pid_file: str):
+    def __init__(self, config_path: str, sock_file: str, log_config_file: str, pid_file: str):
         """Initialize the server."""
         super().__init__(sock_file, CmdHandler)
         self.config_path = config_path
         self.sock_file = sock_file
-        self.log_file = log_file
+        self.log_config_file = log_config_file
+        self.logger = None
         self.pid_file = pid_file
         self.configuration = None
         self.monitor = None
 
     def startup(self):
         """Load the configuration and monitor."""
-        signal.signal(signal.SIGTERM, self.stop)
+        if self.log_config_file:
+            logging.config.fileConfig(self.log_config_file, disable_existing_loggers=True)
+        else:
+            logging.config.dictConfig(self.default_log_config)
+        self.logger = logging.getLogger("Server")
+        signal.signal(signal.SIGTERM, self.stop_server)
         signal.signal(signal.SIGHUP, self.reload)
         self.configuration = Configuration(self.config_path)
         self.monitor = Monitor(self.configuration)
         self.monitor.reload_config()
         atexit.register(clean_up, self.pid_file, self.sock_file)
+        self.logger.info("Server started.")
 
     def service_actions(self):
         """Update the status of programs."""
         self.monitor.update()
+        # self.logger.debug("Service actions performed.")
 
     @classmethod
     def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
@@ -63,7 +89,6 @@ class Server(UnixStreamServer):
         pid = os.fork()
         if pid > 0:
             # Parent process.
-            print(f"Server started in the background at {time.ctime()}.")
             return
         # Child process.
         with DaemonContext(detach_process=False):
@@ -73,14 +98,10 @@ class Server(UnixStreamServer):
             out = open("/dev/pts/0", "w")
             sys.stderr = out
             sys.stdout = out
-            with open(log_file, "a") as f:
-                f.write(f"Server started at {time.ctime()}.\n")
 
             with cls(config_path, sock_file, log_file, pid_file) as server:
                 server.startup()
                 server.serve_forever()
-            with open(log_file, "a") as f:
-                f.write(f"Server stopped at {time.ctime()}.")
 
     # Server commands which can be sent via the socket
 
@@ -111,8 +132,6 @@ class Server(UnixStreamServer):
 
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
-        with open(self.log_file, "a") as f:
-            f.write("Reloading the configuration.\n")
         self.monitor.reload_config()
         return "Configuration reloaded."
 
