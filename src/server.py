@@ -2,8 +2,11 @@ import os
 import sys
 import threading
 import time
+import shlex
+import getopt
 
 import atexit
+
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
 import signal
@@ -25,15 +28,52 @@ def clean_up(*files):
 
 
 class Server(UnixStreamServer):
-    allowed_cmds = ["start", "stop", "restart", "status", "reload", "stop_server", "help"]
     commands_info = {
-        "start": "Start a program",
-        "stop": "Stop a program",
-        "restart": "Restart a program",
-        "status": "Show the status of programs",
-        "reload": "Reload the configuration",
-        "stop_server": "Stop the server",
-        "help": "Show the available commands"
+        "start": {
+            "help": "Start tasks",
+            "options": ["all", "help"],
+            "args": "+",
+            "usage": "Usage: start <task_list | option>\n\n"
+                     "Start provided tasks.\n"
+        },
+        "stop": {
+            "help": "Stop tasks",
+            "options": ["all", "help"],
+            "args": "+",
+            "usage": "Usage: stop <task_list | option>\n\n"
+                     "Stop provided tasks.\n"
+        },
+        "restart": {
+            "help": "Restart tasks",
+            "options": ["all", "help"],
+            "args": "+",
+            "usage": "Usage: restart <task_list | option>\n\n"
+                     "Restart provided tasks.\n",
+    },
+        "status": {
+            "help": "Show the status of tasks",
+            "options": ["help"],
+            "args": "*",
+            "usage": "Usage: status [task_list | option]\n\n"
+                     "Show status for the provided tasks.\n"
+                     "Shows status for all tasks in case no tasks were provided.\n",
+        },
+        "reload": {
+            "help": "Reload the configuration",
+            "options": ["help"],
+        },
+        "stop_server": {
+            "help": "Stop the server",
+            "options": ["help"],
+        },
+        "help": {
+            "help": "Show the available commands",
+        },
+    }
+
+    options_info = {
+        "all": "Execute for all tasks",
+        "help": "Show this message",
     }
     # Default logging configuration with disabled loggers
     default_log_config = {
@@ -105,20 +145,20 @@ class Server(UnixStreamServer):
 
     # Server commands which can be sent via the socket
 
-    def start(self, program_names: list[str]):
+    def start(self, tasks: list[str], all_tasks=False):
         """Start a program."""
-        for program_name in program_names:
-            self.monitor.start_by_name(program_name)
+        for name in tasks:
+            self.monitor.start_by_name(name)
 
-    def stop(self, program_name: list[str]):
+    def stop(self, program_names: list[str], all_tasks=False):
         """Stop a program."""
-        for program_name in program_name:
-            self.monitor.stop_by_name(program_name)
+        for name in program_names:
+            self.monitor.stop_by_name(name)
 
-    def restart(self, program_name: list[str]):
+    def restart(self, program_names: list[str]):
         """Restart a program."""
-        for program_name in program_name:
-            self.monitor.restart_by_name(program_name)
+        for name in program_names:
+            self.monitor.restart_by_name(name)
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
@@ -142,51 +182,81 @@ class Server(UnixStreamServer):
             status_msg += f"{name}: {task.status}\n"
         return status_msg
 
-    def help(self):
-        """Show the available commands."""
-        help_msg = "Available commands:\n"
-        for cmd in self.allowed_cmds:
-            help_msg += f"{cmd}: {self.commands_info.get(cmd, 'No info')}\n"
-        return help_msg
-
 
 class CmdHandler(StreamRequestHandler):
 
-    def parse_request(self, cmd: str) -> tuple or None:
+    @staticmethod
+    def format_help(cmd):
+        if cmd == "help":
+            msg = ("Usage: <command> [options] [<args>]\n\n"
+                   "Available commands:\n")
+            for cmd, info in Server.commands_info.items():
+                msg += f"  {cmd:<11}  {info['help']}\n"
+            return msg
+        cmd_info = Server.commands_info[cmd]
+        msg = Server.commands_info[cmd].get("usage", f"Usage: {cmd} [option]\n\n"
+                                                     f"{cmd_info['help']}\n")
+        msg += "\nOptions:\n"
+        for opt in cmd_info["options"]:
+            msg += f"  --{opt:<4}  {Server.options_info[opt]}\n"
+        return msg
+
+
+    @staticmethod
+    def parse_args(tokens):
+        if not tokens:
+            raise ValueError("Parser: Input command is empty")
+        cmd = tokens[0]
+        if cmd not in Server.commands_info:
+            raise ValueError(f"Parser: Unknown command '{cmd}'")
+        arg_tokens = tokens[1:] if len(tokens) > 1 else []
+        cmd_options = Server.commands_info[cmd].get("options", [])
         try:
-            cmd_data = json.loads(cmd.decode(MSG_ENCODING))
-        except json.JSONDecodeError:
-            return None
-        if not isinstance(cmd_data, dict):
-            return None
-        if "cmd" not in cmd_data:
-            return None
-        if cmd_data["cmd"] not in self.server.allowed_cmds:
-            return None
-        if "args" not in cmd_data:
-            return None
-        if not isinstance(cmd_data["args"], list):
-            return None
-        command = getattr(self.server, cmd_data["cmd"], None)
-        if not command:
-            return None
-        return command, cmd_data["args"]
+            opts, args = getopt.getopt(arg_tokens, "", cmd_options)
+        except getopt.GetoptError as e:
+            raise ValueError(f"Parser: {e}")
+        cmd_args = Server.commands_info[cmd].get("args", None)
+        if args:
+            if cmd_args is None:
+                raise ValueError(f"Parser: {cmd}: Doesn't accept any arguments")
+            if opts:
+                raise ValueError(f"Parser: {cmd}: Only task list or an option can be specified")
+            args = [args]
+        elif cmd_args == "+" and not opts:
+            raise ValueError(f"Parser: {cmd}: Task list or an option expected")
+        elif len(opts) > 1:
+            raise ValueError(f"Parser: {cmd}: Only one option can be provided")
+        help_on = False
+        for option, value in opts:
+            if option == "--all":
+                args = [[], True]
+            elif option == "--help":
+                help_on = True
+            else:
+                raise ValueError(f"Parser: {cmd}: Unknown option '{option}'")
+        return cmd, args, help_on
+
+    def send_response(self, msg, success):
+        status = 0 if success else 1
+        response = {"msg": f"{msg}", "status": status}
+        self.wfile.write(json.dumps(response).encode(MSG_ENCODING))
 
     def handle(self):
-        data = self.request.recv(BUFFER_SIZE).strip()
-        parsed_request = self.parse_request(data)
-        if not parsed_request:
-            response = {"msg": "Invalid command", "status": 1}
-            json_response = json.dumps(response)
-            self.wfile.write(json_response.encode(MSG_ENCODING))
-            return
-
-        command, args = parsed_request
+        data = self.request.recv(BUFFER_SIZE).decode(MSG_ENCODING)
         try:
-            message = command(*args)
-            response = {"msg": message, "status": 0}
+            cmd_name, args, help_on = self.parse_args(shlex.split(data))
         except Exception as e:
-            response = {f"msg": f"An error {e} occurred", "status": 1}
+            return self.send_response(e, False)
 
-        response_json = json.dumps(response)
-        self.wfile.write(response_json.encode(MSG_ENCODING))
+        if help_on or cmd_name == "help":
+            return self.send_response(self.format_help(cmd_name), True)
+
+        cmd = getattr(self.server, cmd_name, None)
+        if cmd is None:
+            return self.send_response(f"CmdHandler: '{cmd_name}' command not found", False)
+
+        try:
+            message = cmd(*args)
+            self.send_response(message, True)
+        except Exception as e:
+            self.send_response(e, False)

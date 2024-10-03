@@ -1,6 +1,5 @@
 import socket
 import readline
-import shlex
 import json
 import sys
 
@@ -9,7 +8,7 @@ from server import BUFFER_SIZE, MSG_ENCODING
 class SocketError(Exception):
     def __init__(self, message):
         self.message = message
-        super().__init__(f"socket error: {self.message}")
+        super().__init__(f"Socket error: {self.message}")
 
 class Shell:
     def __init__(self, sock_file: str):
@@ -19,43 +18,52 @@ class Shell:
 
     def run(self):
         while True:
-            tokens = self._token_input("tm> ")
-            cmd = tokens[0].lower()
-            if cmd == "exit":
+            cmd_input = self._input("tm> ")
+            if cmd_input == "exit":
                 print("\nExiting shell...")
                 break
-            args = tokens[1:] if len(tokens) > 1 else []
             try:
-                response = self._send_command({"cmd": cmd, "args": args})
-                if response.get("status"):
-                    print(f'daemon: {response["msg"]}: {cmd}', file=sys.stderr)
-                elif response.get("msg"):
-                    print(response["msg"])
-                else:
-                    print(f"{cmd} success", file=sys.stderr)
-                if cmd == "stop_server" and not response.get("status"):
-                    break
-            except SocketError as e:
-                print(e, file=sys.stderr)
+                data = self._send_request(cmd_input)
+                response = json.loads(data.decode(MSG_ENCODING))
+                status = response.get("status", None)
+                msg = response.get("msg", None)
+                assert status is not int, "Status format unknown"
 
-    def _send_command(self, cmd_data: dict) -> dict:
+                if status == 0:
+                    print(msg)
+                elif status == 1:
+                    print(f"Daemon: {msg}", file=sys.stderr)
+                else:
+                    assert "Unknown status number"
+
+                # if cmd == "stop_server" and not response.get("status"):
+                #     break
+                # ToDo handle stop server
+            except SocketError as e:
+                print(f"Shell: {e}", file=sys.stderr)
+            except (AssertionError, UnicodeDecodeError, json.JSONDecodeError) as e:
+                print(f"Shell: Response error: {e}", file=sys.stderr)
+            except Exception as e:
+                print(f"Shell: Unknown error: {e}", file=sys.stderr)
+
+
+    def _send_request(self, request: str):
         try:
             with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
                 s.connect(self.sock_file)
-                json_cmd = json.dumps(cmd_data)
-                s.sendall(json_cmd.encode(MSG_ENCODING))
-                data = s.recv(BUFFER_SIZE, )
-                return json.loads(data.decode(MSG_ENCODING))
+                s.sendall(request.encode(MSG_ENCODING))
+                return s.recv(BUFFER_SIZE, )
         except (FileNotFoundError, ConnectionError, socket.timeout, socket.gaierror) as e:
             raise SocketError(e)
 
     @staticmethod
-    def _token_input(prompt):
-        try:
-            while True:
+    def _input(prompt):
+        while True:
+            try:
                 line = input(prompt)
-                if not line.strip():
-                    continue
-                return shlex.split(line)
-        except (KeyboardInterrupt, EOFError):
-            return ["exit"]
+            except (KeyboardInterrupt, EOFError):
+                return "exit"
+            if not line.strip():
+                continue
+            return line
+
