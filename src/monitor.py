@@ -29,8 +29,8 @@ class Task:
 
     def start(self):
         """Start the program. Status becomes STARTING."""
-        if self.process:
-            raise TaskError("Task already started.")
+        if self.process and self.process.poll() is None:
+            raise TaskError("Task has already started.")
         self.status = "STARTING"
         self.rebooting = False
         self.start_time = time.time()
@@ -141,10 +141,13 @@ class Monitor:
     def start_by_name(self, name: str):
         task = self._get_task_by_name(name)
         if task.is_busy():
-            raise MonitorError(f"Task {name} is busy.")
+            raise MonitorError(f"Task '{name}' is busy.")
         elif task.is_done():
-            raise MonitorError(f"Task {name} has already finished.")
-        task.start()
+            raise MonitorError(f"Task '{name}' has already finished.")
+        try:
+            task.start()
+        except TaskError as e:
+            raise MonitorError(f"{name}: {e}")
 
     def start_all(self) -> int:
         """Start all tasks."""
@@ -159,12 +162,15 @@ class Monitor:
     def stop_by_name(self, name: str):
         task = self._get_task_by_name(name)
         if task.is_done():
-            raise MonitorError(f"Task {name} has already finished.")
+            raise MonitorError(f"Task '{name}' has already finished.")
         elif task.status == "STOPPING":
-            raise MonitorError(f"Task {name} is already stopping.")
+            raise MonitorError(f"Task '{name}' is already stopping.")
         elif task.is_idle():
-            raise MonitorError(f"Task {name} has not started yet.")
-        task.stop()
+            raise MonitorError(f"Task '{name}' has not started yet.")
+        try:
+            task.stop()
+        except TaskError as e:
+            raise MonitorError(f"{name}: {e}")
 
     def stop_all(self) -> int:
         """Stop all tasks."""
@@ -179,8 +185,11 @@ class Monitor:
     def restart_by_name(self, name: str):
         task = self._get_task_by_name(name)
         if task.rebooting is True:
-            raise MonitorError(f"Task {name} is already restarting.")
-        task.restart()
+            raise MonitorError(f"Task '{name}' is already restarting.")
+        try:
+            task.restart()
+        except TaskError as e:
+            raise MonitorError(f"{task}: {e}")
         self.active_tasks.add(name)
 
     def restart_all(self):
@@ -195,7 +204,7 @@ class Monitor:
 
     def _get_task_by_name(self, name) -> Task:
         if name not in self.tasks:
-            raise MonitorError(f"Task {name} does not exist.")
+            raise MonitorError(f"Task '{name}' does not exist.")
         return self.tasks[name]
 
     def update(self):

@@ -30,7 +30,8 @@ class Shell:
                 assert status is not int, "Status format unknown"
 
                 if status == 0:
-                    print(msg)
+                    if msg:
+                        print(msg)
                 elif status == 1:
                     print(f"Daemon: {msg}", file=sys.stderr)
                 else:

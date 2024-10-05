@@ -145,16 +145,16 @@ class Server(UnixStreamServer):
         for name in tasks:
             self.monitor.start_by_name(name)
 
-    def stop(self, program_names: list[str], all_tasks=False):
+    def stop(self, tasks: list[str], all_tasks=False):
         """Stop a program."""
-        self.logger.debug(f"Stopping tasks: {program_names}")
-        for name in program_names:
+        self.logger.debug(f"Stopping tasks: {tasks}")
+        for name in tasks:
             self.monitor.stop_by_name(name)
 
-    def restart(self, program_names: list[str]):
+    def restart(self, tasks: list[str], all_tasks=False):
         """Restart a program."""
-        self.logger.debug(f"Restarting tasks: {program_names}")
-        for name in program_names:
+        self.logger.debug(f"Restarting tasks: {tasks}")
+        for name in tasks:
             self.monitor.restart_by_name(name)
 
     def stop_server(self, signum=None, frame=None):
@@ -173,12 +173,12 @@ class Server(UnixStreamServer):
         self.monitor.reload_config()
         return "Configuration reloaded."
 
-    def status(self):
+    def status(self, tasks=()):
         """Show the status of programs."""
         self.logger.debug("Getting status.")
         status_msg = "Programs status:\n"
         for name, task in self.monitor.tasks.items():
-            status_msg += f"{name}: {task.status}\n"
+            status_msg += f"  {name}: {task.status}\n"
         return status_msg
 
 
