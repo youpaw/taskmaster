@@ -1,7 +1,5 @@
 import os
-import sys
 import threading
-import time
 import shlex
 import getopt
 
@@ -116,12 +114,12 @@ class Server(UnixStreamServer):
         self.monitor = Monitor(self.configuration)
         self.monitor.reload_config()
         atexit.register(clean_up, self.pid_file, self.sock_file)
-        self.logger.info("Server started.")
+        self.logger.info("Server startup succeeded.")
 
     def service_actions(self):
         """Update the status of programs."""
         self.monitor.update()
-        # self.logger.debug("Service actions performed.")
+        self.logger.debug("Service actions performed.")
 
     @classmethod
     def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
@@ -135,10 +133,6 @@ class Server(UnixStreamServer):
             if os.path.exists(pid_file):
                 raise ValueError("Server is already running.")
             # uncomment to redirect stdout and stderr to a current terminal
-            out = open("/dev/pts/0", "w")
-            sys.stderr = out
-            sys.stdout = out
-
             with cls(config_path, sock_file, log_file, pid_file) as server:
                 server.startup()
                 server.serve_forever()
@@ -147,22 +141,25 @@ class Server(UnixStreamServer):
 
     def start(self, tasks: list[str], all_tasks=False):
         """Start a program."""
+        self.logger.debug(f"Starting tasks: {tasks}")
         for name in tasks:
             self.monitor.start_by_name(name)
 
     def stop(self, program_names: list[str], all_tasks=False):
         """Stop a program."""
+        self.logger.debug(f"Stopping tasks: {program_names}")
         for name in program_names:
             self.monitor.stop_by_name(name)
 
     def restart(self, program_names: list[str]):
         """Restart a program."""
+        self.logger.debug(f"Restarting tasks: {program_names}")
         for name in program_names:
             self.monitor.restart_by_name(name)
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
-
+        self.logger.info("Stopping server.")
         def _stop():
             """Actually stop the server."""
             self.shutdown()  # look shutdown method in parent server class
@@ -172,11 +169,13 @@ class Server(UnixStreamServer):
 
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
+        self.logger.info("Reloading configuration.")
         self.monitor.reload_config()
         return "Configuration reloaded."
 
     def status(self):
         """Show the status of programs."""
+        self.logger.debug("Getting status.")
         status_msg = "Programs status:\n"
         for name, task in self.monitor.tasks.items():
             status_msg += f"{name}: {task.status}\n"
@@ -184,6 +183,8 @@ class Server(UnixStreamServer):
 
 
 class CmdHandler(StreamRequestHandler):
+
+    logger = logging.getLogger("CmdHandler")
 
     @staticmethod
     def format_help(cmd):
