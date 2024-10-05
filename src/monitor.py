@@ -10,6 +10,7 @@ class TaskError(Exception):
         self.message = message
         super().__init__(self.message)
 
+
 class Task:
 
     DONE = ["SUCCEEDED", "FAILED", "KILLED", "STOPPED"]
@@ -34,12 +35,15 @@ class Task:
         self.status = "STARTING"
         self.rebooting = False
         self.start_time = time.time()
+        print(f"Starting {self.program.cmd} with umask {self.program.umask}")
         self.process = subprocess.Popen(
                 args=self.program.args,
-                cwd=self.program.workingdir,
+                cwd=self.program.cwd,
                 stdout=open(self.program.stdout, "a") if self.program.stdout else None,
                 stderr=open(self.program.stderr, "a") if self.program.stderr else None,
-                env=self.program.env
+                env=self.program.env,
+                umask=self.program.umask,
+
         )
 
     def check_start(self):
@@ -89,8 +93,15 @@ class Task:
         if return_code is not None:
             self.process.wait()
             if return_code in self.program.exitcodes:
-                self.status = "SUCCEEDED"
+                if self.program.autorestart == "always" and self.restart_count < self.program.startretries:
+                    self.restart_count += 1
+                    self.start()
+                else:
+                    self.status = "SUCCEEDED"
             else:
+                if self.program.autorestart == "unexpected" and self.restart_count < self.program.startretries:
+                    self.restart_count += 1
+                    self.start()
                 self.status = "FAILED"
 
     def restart(self):

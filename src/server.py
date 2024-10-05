@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import shlex
 import getopt
@@ -110,7 +111,11 @@ class Server(UnixStreamServer):
         self.logger = logging.getLogger("Server")
         signal.signal(signal.SIGTERM, self.stop_server)
         signal.signal(signal.SIGHUP, self.reload)
-        self.configuration = Configuration(self.config_path)
+        try:
+            self.configuration = Configuration(self.config_path)
+        except Exception as e:
+            print(f"Fuckup {e}")
+            raise e
         self.monitor = Monitor(self.configuration)
         self.monitor.reload_config()
         atexit.register(clean_up, self.pid_file, self.sock_file)
@@ -133,8 +138,15 @@ class Server(UnixStreamServer):
             if os.path.exists(pid_file):
                 raise ValueError("Server is already running.")
             # uncomment to redirect stdout and stderr to a current terminal
+            out = open("dev/pts/0", "w")
+            sys.stdout = out
+            sys.stderr = out
+            print(f"Taskmaster started in background with pid {os.getpid()}")
+
             with cls(config_path, sock_file, log_file, pid_file) as server:
                 server.startup()
+                print(f"Taskmaster started on {sock_file}")
+
                 server.serve_forever()
 
     # Server commands which can be sent via the socket
