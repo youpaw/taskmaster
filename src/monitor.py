@@ -1,4 +1,5 @@
 import logging
+from venv import logger
 
 from configuration import Program, Configuration
 import subprocess
@@ -24,6 +25,7 @@ class Task:
         self.restart_count = 0
         self.rebooting = 0
         self.status = "CREATED"
+        self.logger = logging.getLogger("Task")
 
     def __repr__(self):
         return f"<Task {self.program.cmd} in status {self.status} with pid {self.process.pid if self.process else '?'}>"
@@ -52,13 +54,16 @@ class Task:
         return_code = self.process.poll()
         if return_code is not None:
             if return_code in self.program.exitcodes:
+                self.logger.info(f"Program {self.program.cmd} started successfully.")
                 self.status = "SUCCEEDED"
             else:
                 if time.time() - self.start_time < self.program.startsecs and \
                         self.restart_count < self.program.startretries:
                     self.restart_count += 1
+                    self.logger.info(f"Program {self.program.cmd} failed to start. Restarting for the {self.restart_count} time.")
                     self.start()
                 else:
+                    self.logger.info(f"Program {self.program.cmd} failed to start.")
                     self.status = "FAILED"
         else:
             if time.time() - self.start_time > self.program.startsecs:
@@ -81,10 +86,12 @@ class Task:
         if return_code is not None:
             self.status = "STOPPED"
             self.process.wait()
+            self.logger.info(f"Program {self.program.cmd} stopped.")
         else:
             if not self.program.stopwaitsecs or time.time() - self.stop_time > self.program.stopwaitsecs:
                 self.status = "KILLED"
                 self.process.kill()
+                self.logger.info(f"Program {self.program.cmd} failed to stop and was killed.")
                 # ToDo check if we should wait for the process kill
 
     def check_running(self):
@@ -97,11 +104,13 @@ class Task:
                     self.restart_count += 1
                     self.start()
                 else:
+                    self.logger.info(f"Program {self.program.cmd} exited with code {return_code}.")
                     self.status = "SUCCEEDED"
             else:
                 if self.program.autorestart == "unexpected" and self.restart_count < self.program.startretries:
                     self.restart_count += 1
                     self.start()
+                self.logger.info(f"Program {self.program.cmd} failed with exit code {return_code}.")
                 self.status = "FAILED"
 
     def restart(self):
@@ -109,9 +118,9 @@ class Task:
         try:
             self.stop()
             self.rebooting = True
+            self.logger.info(f"Restarting program {self.program.cmd}.")
         except TaskError:
             self.start()
-
 
     def update_status(self):
         """Update the status of the program based on the status of its processes."""
@@ -151,11 +160,13 @@ class Monitor:
 
     def start_by_name(self, name: str):
         task = self._get_task_by_name(name)
+        self.logger.debug(f"Starting task {name}.")
         if task.is_busy():
             raise MonitorError(f"Task '{name}' is busy.")
         elif task.is_done():
             raise MonitorError(f"Task '{name}' has already finished.")
         try:
+            logger.debug(f"Starting task {name}.")
             task.start()
         except TaskError as e:
             raise MonitorError(f"{name}: {e}")
@@ -171,6 +182,7 @@ class Monitor:
             self.active_tasks.remove(name)
             return
         try:
+            logger.debug(f"Stopping task {name}.")
             task.stop()
         except TaskError as e:
             raise MonitorError(f"{name}: {e}")
@@ -181,6 +193,7 @@ class Monitor:
         if task.rebooting is True:
             raise MonitorError(f"Task '{name}' is already restarting.")
         try:
+            logger.debug(f"Restarting task {name}.")
             task.restart()
         except TaskError as e:
             raise MonitorError(f"{task}: {e}")
@@ -189,8 +202,10 @@ class Monitor:
     def restart_all(self):
         """Restart all tasks."""
         counter = 0
+        logger.debug(f"Restarting tasks: {self.active_tasks}")
         for name, task in self.tasks.items():
             if task.rebooting is False:
+                logger.debug(f"Restarting task {name}.")
                 task.restart()
                 self.active_tasks.add(name)
                 counter += 1
@@ -214,6 +229,7 @@ class Monitor:
 
     def reload_config(self):
         """Reload the configuration."""
+        self.logger.debug("Reloading configuration.")
         old_progs = self.config.programs
         self.config.reload_config()
         new_progs = self.config.programs
@@ -227,16 +243,22 @@ class Monitor:
         new_ids = set(new_progs.keys())
         # Process added programs
         added_ids = new_ids - old_ids
+        logger.debug(f"Added programs: {added_ids}")
         for name in added_ids:
+            logger.info(f"Adding program {name}.")
             self._create_task(name, new_progs[name])
         # Process removed programs
         removed_ids = old_ids - new_ids
+        logger.debug(f"Removed programs: {removed_ids}")
         for name in removed_ids:
+            logger.info(f"Removing program {name}.")
             self._retire_task(name)
         # Process same programs
         same_ids = new_ids & old_ids
+        logger.debug(f"Same programs: {same_ids}")
         for name in same_ids:
             if old_progs[name] == new_progs[name]:
+                logger.info(f"Program {name} has not changed.")
                 continue
             self._retire_task(name)
             self._create_task(name, new_progs[name])

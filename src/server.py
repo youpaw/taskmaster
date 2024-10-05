@@ -123,7 +123,6 @@ class Server(UnixStreamServer):
     def service_actions(self):
         """Update the status of programs."""
         self.monitor.update()
-        self.logger.debug("Service actions performed.")
 
     @classmethod
     def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
@@ -203,8 +202,7 @@ class Server(UnixStreamServer):
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
-        self.logger.info("Stopping server.")
-
+        self.logger.debug("Stopping server.")
         def _stop():
             """Actually stop the server."""
             self.shutdown()  # look shutdown method in parent server class
@@ -214,7 +212,7 @@ class Server(UnixStreamServer):
 
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
-        self.logger.info("Reloading configuration.")
+        self.logger.debug("Reloading configuration.")
         self.monitor.reload_config()
         return 0, "Configuration has been reloaded"
 
