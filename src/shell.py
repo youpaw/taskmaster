@@ -27,19 +27,21 @@ class Shell:
                 response = json.loads(data.decode(MSG_ENCODING))
                 status = response.get("status", None)
                 msg = response.get("msg", None)
+                cmd = response.get("cmd", None)
                 assert status is not int, "Status format unknown"
 
                 if status == 0:
                     if msg:
                         print(msg)
+                    if cmd == "stop_server":
+                        break
                 elif status == 1:
                     print(f"Daemon: {msg}", file=sys.stderr)
+                elif status == 2:
+                    print(msg, file=sys.stderr)
                 else:
                     assert "Unknown status number"
 
-                # if cmd == "stop_server" and not response.get("status"):
-                #     break
-                # ToDo handle stop server
             except SocketError as e:
                 print(f"Shell: {e}", file=sys.stderr)
             except (AssertionError, UnicodeDecodeError, json.JSONDecodeError) as e:

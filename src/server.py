@@ -13,7 +13,7 @@ import logging
 import logging.config
 
 from configuration import Configuration
-from monitor import Monitor
+from monitor import Monitor, MonitorError
 
 BUFFER_SIZE = 1024
 MSG_ENCODING = 'utf-8'
@@ -140,22 +140,64 @@ class Server(UnixStreamServer):
     # Server commands which can be sent via the socket
 
     def start(self, tasks: list[str], all_tasks=False):
-        """Start a program."""
+        """Start tasks."""
+        msg = ""
+        fail_cnt = 0
+        if all_tasks:
+            tasks = [name for name in self.monitor.active_tasks if self.monitor.tasks[name].is_idle()]
         self.logger.debug(f"Starting tasks: {tasks}")
         for name in tasks:
-            self.monitor.start_by_name(name)
+            try:
+                self.monitor.start_by_name(name)
+            except MonitorError as e:
+                msg += f"  {e}\n"
+                fail_cnt += 1
+        if fail_cnt == 0:
+            msg = f"All {len(tasks)} tasks started successfully"
+            return 0, msg
+        else:
+            msg = f"Failed to start {fail_cnt} out of {len(tasks)} tasks:\n" + msg
+            return 2, msg
 
     def stop(self, tasks: list[str], all_tasks=False):
-        """Stop a program."""
+        """Stop tasks."""
+        msg = ""
+        fail_cnt = 0
+        if all_tasks:
+            tasks = [name for name in self.monitor.active_tasks if self.monitor.tasks[name].status != "STOPPING"]
         self.logger.debug(f"Stopping tasks: {tasks}")
         for name in tasks:
-            self.monitor.stop_by_name(name)
+            try:
+                self.monitor.stop_by_name(name)
+            except MonitorError as e:
+                msg += f"  {e}\n"
+                fail_cnt += 1
+        if fail_cnt == 0:
+            msg = f"All {len(tasks)} tasks stopped successfully"
+            return 0, msg
+        else:
+            msg = f"Failed to stop {fail_cnt} out of {len(tasks)} tasks:\n" + msg
+            return 2, msg
 
     def restart(self, tasks: list[str], all_tasks=False):
-        """Restart a program."""
+        """Restart tasks."""
+        msg = ""
+        fail_cnt = 0
+        if all_tasks:
+            tasks = [name for name, task in self.monitor.tasks.items() if task.rebooting is False]
         self.logger.debug(f"Restarting tasks: {tasks}")
         for name in tasks:
-            self.monitor.restart_by_name(name)
+            try:
+                self.monitor.restart_by_name(name)
+            except MonitorError as e:
+                msg += f"  {e}\n"
+                fail_cnt += 1
+        if fail_cnt == 0:
+            msg = f"All {len(tasks)} tasks restarted successfully"
+            return 0, msg
+        else:
+            msg = f"Failed to restart {fail_cnt} out of {len(tasks)} tasks:\n" + msg
+            return 2, msg
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
@@ -165,21 +207,23 @@ class Server(UnixStreamServer):
             self.shutdown()  # look shutdown method in parent server class
 
         threading.Thread(target=_stop).start()  # Check shutdown method in base class
-        return "Server stopped."
+        return 0, "Server has been stopped"
 
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
         self.logger.info("Reloading configuration.")
         self.monitor.reload_config()
-        return "Configuration reloaded."
+        return 0, "Configuration has been reloaded"
 
     def status(self, tasks=()):
         """Show the status of programs."""
-        self.logger.debug("Getting status.")
+        if not tasks:
+            tasks = list(self.monitor.tasks.keys)
+        self.logger.debug(f"Getting status for tasks: {tasks}")
         status_msg = "Programs status:\n"
-        for name, task in self.monitor.tasks.items():
+        for name, task in tasks:
             status_msg += f"  {name}: {task.status}\n"
-        return status_msg
+        return 0, status_msg
 
 
 class CmdHandler(StreamRequestHandler):
@@ -237,27 +281,28 @@ class CmdHandler(StreamRequestHandler):
                 raise ValueError(f"Parser: {cmd}: Unknown option '{option}'")
         return cmd, args, help_on
 
-    def send_response(self, msg, success):
-        status = 0 if success else 1
-        response = {"msg": f"{msg}", "status": status}
+    def send_response(self, msg, status: int, cmd=None):
+        response = {"msg": f"{msg}", "status": status, "command": f"{cmd}"}
         self.wfile.write(json.dumps(response).encode(MSG_ENCODING))
 
     def handle(self):
         data = self.request.recv(BUFFER_SIZE).decode(MSG_ENCODING)
         try:
             cmd_name, args, help_on = self.parse_args(shlex.split(data))
+        except ValueError as e:
+            return self.send_response(e, 1)
         except Exception as e:
-            return self.send_response(e, False)
+            return self.send_response(f"CmdHandler: Unknown exception: {e}", 1)
 
         if help_on or cmd_name == "help":
-            return self.send_response(self.format_help(cmd_name), True)
+            return self.send_response(self.format_help(cmd_name), 0)
 
         cmd = getattr(self.server, cmd_name, None)
         if cmd is None:
-            return self.send_response(f"CmdHandler: '{cmd_name}' command not found", False)
+            return self.send_response(f"CmdHandler: '{cmd_name}' command not found", 1)
 
         try:
-            message = cmd(*args)
-            self.send_response(message, True)
+            status, message = cmd(*args)
+            self.send_response(message, status, cmd)
         except Exception as e:
-            self.send_response(e, False)
+            self.send_response(f"CmdHandler: {cmd}: Unknown exception: {e}", 1, cmd)

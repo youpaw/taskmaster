@@ -149,16 +149,6 @@ class Monitor:
         except TaskError as e:
             raise MonitorError(f"{name}: {e}")
 
-    def start_all(self) -> int:
-        """Start all tasks."""
-        counter = 0
-        for name in self.active_tasks:
-            task = self.tasks[name]
-            if task.is_idle():
-                task.start()
-                counter += 1
-        return counter
-
     def stop_by_name(self, name: str):
         task = self._get_task_by_name(name)
         if task.is_done():
@@ -166,21 +156,14 @@ class Monitor:
         elif task.status == "STOPPING":
             raise MonitorError(f"Task '{name}' is already stopping.")
         elif task.is_idle():
-            raise MonitorError(f"Task '{name}' has not started yet.")
+            task.status = "STOPPED"
+            self.active_tasks.remove(name)
+            return
         try:
             task.stop()
         except TaskError as e:
             raise MonitorError(f"{name}: {e}")
 
-    def stop_all(self) -> int:
-        """Stop all tasks."""
-        counter = 0
-        for name in self.active_tasks:
-            task = self.tasks[name]
-            if task.is_busy() and task.status != "STOPPING" and task.is_idle() is False:
-                task.stop()
-                counter += 1
-        return counter
 
     def restart_by_name(self, name: str):
         task = self._get_task_by_name(name)
