@@ -199,18 +199,6 @@ class Monitor:
             raise MonitorError(f"{task}: {e}")
         self.active_tasks.add(name)
 
-    def restart_all(self):
-        """Restart all tasks."""
-        counter = 0
-        self.logger.debug(f"Restarting tasks: {self.active_tasks}")
-        for name, task in self.tasks.items():
-            if task.rebooting is False:
-                self.logger.debug(f"Restarting task ''{name}''.")
-                task.restart()
-                self.active_tasks.add(name)
-                counter += 1
-        return counter
-
     def _get_task_by_name(self, name) -> Task:
         if name not in self.tasks:
             raise MonitorError(f"Task '{name}' does not exist.")
