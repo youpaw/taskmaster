@@ -166,7 +166,7 @@ class Monitor:
         elif task.is_done():
             raise MonitorError(f"Task '{name}' has already finished.")
         try:
-            logger.debug(f"Starting task {name}.")
+            self.logger.debug(f"Starting task {name}.")
             task.start()
         except TaskError as e:
             raise MonitorError(f"{name}: {e}")
@@ -182,7 +182,7 @@ class Monitor:
             self.active_tasks.remove(name)
             return
         try:
-            logger.debug(f"Stopping task {name}.")
+            self.logger.debug(f"Stopping task {name}.")
             task.stop()
         except TaskError as e:
             raise MonitorError(f"{name}: {e}")
@@ -193,7 +193,7 @@ class Monitor:
         if task.rebooting is True:
             raise MonitorError(f"Task '{name}' is already restarting.")
         try:
-            logger.debug(f"Restarting task {name}.")
+            self.logger.debug(f"Restarting task {name}.")
             task.restart()
         except TaskError as e:
             raise MonitorError(f"{task}: {e}")
@@ -202,10 +202,10 @@ class Monitor:
     def restart_all(self):
         """Restart all tasks."""
         counter = 0
-        logger.debug(f"Restarting tasks: {self.active_tasks}")
+        self.logger.debug(f"Restarting tasks: {self.active_tasks}")
         for name, task in self.tasks.items():
             if task.rebooting is False:
-                logger.debug(f"Restarting task {name}.")
+                self.logger.debug(f"Restarting task {name}.")
                 task.restart()
                 self.active_tasks.add(name)
                 counter += 1
@@ -243,22 +243,22 @@ class Monitor:
         new_ids = set(new_progs.keys())
         # Process added programs
         added_ids = new_ids - old_ids
-        logger.debug(f"Added programs: {added_ids}")
+        self.logger.debug(f"Added programs: {added_ids}")
         for name in added_ids:
-            logger.info(f"Adding program {name}.")
+            self.logger.info(f"Adding program {name}.")
             self._create_task(name, new_progs[name])
         # Process removed programs
         removed_ids = old_ids - new_ids
-        logger.debug(f"Removed programs: {removed_ids}")
+        self.logger.debug(f"Removed programs: {removed_ids}")
         for name in removed_ids:
-            logger.info(f"Removing program {name}.")
+            self.logger.info(f"Removing program {name}.")
             self._retire_task(name)
         # Process same programs
         same_ids = new_ids & old_ids
-        logger.debug(f"Same programs: {same_ids}")
+        self.logger.debug(f"Same programs: {same_ids}")
         for name in same_ids:
             if old_progs[name] == new_progs[name]:
-                logger.info(f"Program {name} has not changed.")
+                self.logger.info(f"Program {name} has not changed.")
                 continue
             self._retire_task(name)
             self._create_task(name, new_progs[name])
