@@ -35,8 +35,10 @@ def validate_args(args: argparse.Namespace):
     config_path = os.path.abspath(args.config)
 
     if args.log_config:
+        if not os.path.exists(args.log_config):
+            print(f"Log config file {args.log_config} not found.")
+            exit(1)
         log_path = os.path.abspath(args.log_config)
-
     if os.path.exists(args.pid):
         print("Taskmaster is already running.")
         exit(1)
@@ -63,5 +65,4 @@ if __name__ == "__main__":
 
     arguments = parser.parse_args()
     config, log, pid, socket, mode = validate_args(arguments)
-    print(log, arguments.log_config)
     main(config, socket, log, pid, mode)

@@ -4,6 +4,7 @@ import shlex
 import getopt
 
 import atexit
+from venv import logger
 
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
@@ -305,6 +306,7 @@ class CmdHandler(StreamRequestHandler):
         data = self.request.recv(BUFFER_SIZE).decode(MSG_ENCODING)
         try:
             cmd_name, args, help_on = self.parse_args(shlex.split(data))
+            logger.debug(f"CmdHandler: received command '{cmd_name}' with args: {args} help: '{help_on}'")
         except ValueError as e:
             return self.send_response(e, 1)
         except Exception as e:
