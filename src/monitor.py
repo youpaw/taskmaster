@@ -28,7 +28,7 @@ class Task:
         self.logger = logging.getLogger("Task")
 
     def __repr__(self):
-        return f"<Task {self.program.cmd} in status {self.status} with pid {self.process.pid if self.process else '?'}>"
+        return f"<Task '{self.program.cmd}' in status {self.status} with pid {self.process.pid if self.process else '?'}>"
 
 
     def start(self):
@@ -54,25 +54,26 @@ class Task:
         return_code = self.process.poll()
         if return_code is not None:
             if return_code in self.program.exitcodes:
-                self.logger.info(f"Program '{self.program.cmd}' started successfully.")
+                self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
                 self.status = "SUCCEEDED"
             else:
                 if time.time() - self.start_time < self.program.startsecs and \
                         self.restart_count < self.program.startretries:
                     self.restart_count += 1
-                    self.logger.info(f"Program '{self.program.cmd}' failed to start. Restarting for the {self.restart_count} time.")
+                    self.logger.info(f"Program '{self.program.cmd}' failed to start, restarting count {self.restart_count}/{self.program.startretries}.")
                     self.start()
                 else:
                     self.logger.info(f"Program '{self.program.cmd}' failed to start.")
                     self.status = "FAILED"
         else:
             if time.time() - self.start_time > self.program.startsecs:
+                self.logger.info(f"Program '{self.program.cmd}' started successfully.")
                 self.status = "RUNNING"
 
     def stop(self):
         """Stop the program. Status becomes STOPPING."""
         if self.process:
-            if self.process.poll():
+            if self.process.poll() is not None:
                 raise TaskError("Task is not running.")
         else:
             raise TaskError("Task is not initialized.")
@@ -115,10 +116,10 @@ class Task:
 
     def restart(self):
         """Restart the program. Status becomes RESTARTING."""
+        self.logger.info(f"Restarting program '{self.program.cmd}'.")
         try:
             self.stop()
             self.rebooting = True
-            self.logger.info(f"Restarting program '{self.program.cmd}'.")
         except TaskError:
             self.start()
 
@@ -193,7 +194,7 @@ class Monitor:
         if task.rebooting is True:
             raise MonitorError(f"Task '{name}' is already restarting.")
         try:
-            self.logger.debug(f"Restarting task ''{name}''.")
+            self.logger.debug(f"Restarting task '{name}'.")
             task.restart()
         except TaskError as e:
             raise MonitorError(f"{task}: {e}")
