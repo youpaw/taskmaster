@@ -156,7 +156,7 @@ class Server(UnixStreamServer):
             except MonitorError as e:
                 msg += f"  {e}\n"
                 fail_cnt += 1
-        if fail_cnt == 0:
+        if fail_cnt:
             msg = f"Failed to start {fail_cnt} out of {len(tasks)} tasks:\n" + msg
             return 2, msg
         msg = f"All {len(tasks)} tasks started successfully"
