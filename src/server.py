@@ -4,6 +4,7 @@ import shlex
 import getopt
 
 import atexit
+from venv import logger
 
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
@@ -123,7 +124,6 @@ class Server(UnixStreamServer):
     def service_actions(self):
         """Update the status of programs."""
         self.monitor.update()
-        self.logger.debug("Service actions performed.")
 
     @classmethod
     def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
@@ -203,8 +203,7 @@ class Server(UnixStreamServer):
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
-        self.logger.info("Stopping server.")
-
+        self.logger.debug("Stopping server.")
         def _stop():
             """Actually stop the server."""
             self.shutdown()  # look shutdown method in parent server class
@@ -214,7 +213,7 @@ class Server(UnixStreamServer):
 
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
-        self.logger.info("Reloading configuration.")
+        self.logger.debug("Reloading configuration.")
         self.monitor.reload_config()
         return 0, "Configuration has been reloaded"
 
@@ -307,6 +306,7 @@ class CmdHandler(StreamRequestHandler):
         data = self.request.recv(BUFFER_SIZE).decode(MSG_ENCODING)
         try:
             cmd_name, args, help_on = self.parse_args(shlex.split(data))
+            logger.debug(f"CmdHandler: received command '{cmd_name}' with args: {args} help: '{help_on}'")
         except ValueError as e:
             return self.send_response(e, 1)
         except Exception as e:
