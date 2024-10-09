@@ -27,7 +27,7 @@ class Shell:
                 response = json.loads(data.decode(MSG_ENCODING))
                 status = response.get("status", None)
                 msg = response.get("msg", None)
-                cmd = response.get("cmd", None)
+                cmd = response.get("command", None)
                 assert status is not int, "Status format unknown"
 
                 if status == 0:

@@ -153,11 +153,10 @@ class Server(UnixStreamServer):
                 msg += f"  {e}\n"
                 fail_cnt += 1
         if fail_cnt == 0:
-            msg = f"All {len(tasks)} tasks started successfully"
-            return 0, msg
-        else:
             msg = f"Failed to start {fail_cnt} out of {len(tasks)} tasks:\n" + msg
             return 2, msg
+        msg = f"All {len(tasks)} tasks started successfully"
+        return 0, msg
 
     def stop(self, tasks: list[str], all_tasks=False):
         """Stop tasks."""
@@ -172,12 +171,11 @@ class Server(UnixStreamServer):
             except MonitorError as e:
                 msg += f"  {e}\n"
                 fail_cnt += 1
-        if fail_cnt == 0:
-            msg = f"All {len(tasks)} tasks stopped successfully"
-            return 0, msg
-        else:
+        if fail_cnt:
             msg = f"Failed to stop {fail_cnt} out of {len(tasks)} tasks:\n" + msg
             return 2, msg
+        msg = f"All {len(tasks)} tasks stopped successfully"
+        return 0, msg
 
     def restart(self, tasks: list[str], all_tasks=False):
         """Restart tasks."""
@@ -192,12 +190,12 @@ class Server(UnixStreamServer):
             except MonitorError as e:
                 msg += f"  {e}\n"
                 fail_cnt += 1
-        if fail_cnt == 0:
-            msg = f"All {len(tasks)} tasks restarted successfully"
-            return 0, msg
-        else:
+        if fail_cnt:
             msg = f"Failed to restart {fail_cnt} out of {len(tasks)} tasks:\n" + msg
             return 2, msg
+        msg = f"All {len(tasks)} tasks restarted successfully"
+        return 0, msg
+
 
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
@@ -217,12 +215,29 @@ class Server(UnixStreamServer):
 
     def status(self, tasks=()):
         """Show the status of programs."""
-        if not tasks:
-            tasks = list(self.monitor.tasks.keys)
+        fail_cnt = 0
+        err_msg = ""
+        if tasks:
+            tasks_dict = {}
+            for name in tasks:
+                try:
+                    tasks_dict[name] = self.monitor._get_task_by_name(name)
+                except MonitorError as e:
+                    err_msg += f"{e}\n"
+                    fail_cnt += 1
+            tasks = tasks_dict
+        else:
+            tasks = self.monitor.tasks
         self.logger.debug(f"Getting status for tasks: {tasks}")
-        status_msg = "Programs status:\n"
-        for name, task in tasks:
-            status_msg += f"  {name}: {task.status}\n"
+        if tasks:
+            status_msg = "Programs status:\n"
+            for name in tasks:
+                task = self.monitor.tasks[name]
+                status_msg += f"  {name}: {task.status}\n"
+        else:
+            status_msg = "No tasks found\n"
+        if fail_cnt:
+            return 2, status_msg + f"\n{err_msg}"
         return 0, status_msg
 
 
@@ -303,6 +318,6 @@ class CmdHandler(StreamRequestHandler):
 
         try:
             status, message = cmd(*args)
-            self.send_response(message, status, cmd)
+            self.send_response(message.rstrip(), status, cmd_name)
         except Exception as e:
-            self.send_response(f"CmdHandler: {cmd}: Unknown exception: {e}", 1, cmd)
+            self.send_response(f"CmdHandler: {cmd_name}: Unknown exception: {e}", 1, cmd_name)
