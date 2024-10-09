@@ -1,5 +1,8 @@
 programs:
-  basic:
+  alive:
     cmd: 'cat'
-    fd: 1
-    autostart: False
+    autostart: True
+
+  simple:
+    cmd: 'sleep 10'
+    autostart: True
