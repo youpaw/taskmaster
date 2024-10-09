@@ -9,7 +9,7 @@ import yaml
 class Program:
     cmd: str
     autostart: bool = False
-    autorestart: str = "never"
+    autorestart: str = field(default="never", metadata={"allowed_values": ["never", "always", "unexpected"]})  # TODO complete in monitor.py
     exitcodes: list = field(default_factory=lambda: [0])
     startsecs: int = 0
     startretries: int = 3
@@ -18,8 +18,8 @@ class Program:
     stdout: str = None
     stderr: str = None
     env: dict = None  # TODO test this
-    workingdir: str = None
-    umask: int = None
+    cwd: str = None
+    umask: int = -1
 
     @property
     def args(self):
@@ -55,10 +55,13 @@ class Configuration:
                 if num_procs:
                     if not isinstance(num_procs, int):
                         raise TypeError(f"numprocs must be an integer, not {type(num_procs)}")
-                    if num_procs < 2:
-                        raise ValueError("numprocs must be greater than 1")
-                    for i in range(num_procs):
-                        programs[f"{name}_{i + 1}"] = Program(**attributes)
+                    if num_procs < 1:
+                        raise ValueError("numprocs must be greater than 0")
+                    if num_procs == 1:
+                        programs[name] = Program(**attributes)
+                    else:
+                        for i in range(num_procs):
+                            programs[f"{name}_{i + 1}"] = Program(**attributes)
                 else:
                     programs[name] = Program(**attributes)
             except TypeError as e:
@@ -66,10 +69,3 @@ class Configuration:
                 return None
 
         return programs
-
-
-# if __name__ == "__main__":
-#     conf = Configuration("/home/kosyan62/PycharmProjects/taskmaster/test/base.yaml")
-#     print(conf.config)
-    # pr1 = Program(cmd="ls -l", numprocs=2, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)
-    # pr2 = Program(cmd="ls -l", numprocs=1, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)

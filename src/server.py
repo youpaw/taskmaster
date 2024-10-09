@@ -100,6 +100,10 @@ class Server(UnixStreamServer):
         self.pid_file = pid_file
         self.configuration = None
         self.monitor = None
+        try:
+            Configuration(config_path)
+        except Exception as e:
+            raise e
 
     def startup(self):
         """Load the configuration and monitor."""
@@ -132,7 +136,7 @@ class Server(UnixStreamServer):
         with DaemonContext(detach_process=False):
             if os.path.exists(pid_file):
                 raise ValueError("Server is already running.")
-            # uncomment to redirect stdout and stderr to a current terminal
+
             with cls(config_path, sock_file, log_file, pid_file) as server:
                 server.startup()
                 server.serve_forever()
@@ -200,6 +204,7 @@ class Server(UnixStreamServer):
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
         self.logger.info("Stopping server.")
+
         def _stop():
             """Actually stop the server."""
             self.shutdown()  # look shutdown method in parent server class
@@ -231,8 +236,7 @@ class Server(UnixStreamServer):
         self.logger.debug(f"Getting status for tasks: {tasks}")
         if tasks:
             status_msg = "Programs status:\n"
-            for name in tasks:
-                task = self.monitor.tasks[name]
+            for name, task in tasks.items():
                 status_msg += f"  {name}: {task.status}\n"
         else:
             status_msg = "No tasks found\n"
@@ -260,7 +264,6 @@ class CmdHandler(StreamRequestHandler):
         for opt in cmd_info["options"]:
             msg += f"  --{opt:<4}  {Server.options_info[opt]}\n"
         return msg
-
 
     @staticmethod
     def parse_args(tokens):
@@ -317,6 +320,7 @@ class CmdHandler(StreamRequestHandler):
             return self.send_response(f"CmdHandler: '{cmd_name}' command not found", 1)
 
         try:
+            print(args)
             status, message = cmd(*args)
             self.send_response(message.rstrip(), status, cmd_name)
         except Exception as e:

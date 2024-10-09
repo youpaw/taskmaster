@@ -2,7 +2,23 @@ programs:
   alive:
     cmd: 'cat'
     autostart: True
+    numprocs: 3
+    autorestart: "unexpected"
+    exitcodes: [0,2]
+    startsecs: 5
+    startretries: 3
 
   simple:
     cmd: 'sleep 10'
-    autostart: True
+    autostart: False
+    autorestart: "always"
+    numprocs: 2
+    startsecs: 5
+    umask: 22
+
+  cwd:
+    cmd: 'touch newfile'
+    autostart: False
+    autorestart: "never"
+    numprocs: 1
+    cwd: /tmp
