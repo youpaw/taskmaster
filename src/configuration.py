@@ -69,10 +69,3 @@ class Configuration:
                 return None
 
         return programs
-
-
-# if __name__ == "__main__":
-#     conf = Configuration("/home/kosyan62/PycharmProjects/taskmaster/test/base.yaml")
-#     print(conf.config)
-    # pr1 = Program(cmd="ls -l", numprocs=2, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)
-    # pr2 = Program(cmd="ls -l", numprocs=1, autostart=True, autorestart="always", exitcodes=[0, 1], startsecs=1, startretries=3, stopsignal="SIGTERM", stopwaitsecs=10, stdout="stdout.log", stderr="stderr.log", env={"PATH": "/usr/bin"}, workingdir="/tmp", umask=0o022)

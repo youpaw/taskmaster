@@ -26,7 +26,8 @@ class Task:
         self.status = "CREATED"
 
     def __repr__(self):
-        return f"<Task {self.program.cmd} in status {self.status} with pid {self.process.pid}>"
+        return f"<Task {self.program.cmd} in status {self.status} with pid {self.process.pid if self.process else '?'}>"
+
 
     def start(self):
         """Start the program. Status becomes STARTING."""
@@ -35,7 +36,6 @@ class Task:
         self.status = "STARTING"
         self.rebooting = False
         self.start_time = time.time()
-        print(f"Starting {self.program.cmd} with umask {self.program.umask}")
         self.process = subprocess.Popen(
                 args=self.program.args,
                 cwd=self.program.cwd,
