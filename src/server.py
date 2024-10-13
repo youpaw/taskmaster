@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import shlex
 import getopt
@@ -15,6 +16,7 @@ import logging.config
 
 from configuration import Configuration
 from monitor import Monitor, MonitorError
+from configuration import ConfigurationError
 
 BUFFER_SIZE = 1024
 MSG_ENCODING = 'utf-8'
@@ -91,25 +93,22 @@ class Server(UnixStreamServer):
         },
     }
 
-    def __init__(self, config_path: str, sock_file: str, log_config_file: str, pid_file: str):
+    def __init__(self, config_path: str, socket_path: str, log_path: str, pid_path: str):
         """Initialize the server."""
-        super().__init__(sock_file, CmdHandler)
+        super().__init__(socket_path, CmdHandler)
         self.config_path = config_path
-        self.sock_file = sock_file
-        self.log_config_file = log_config_file
+        self.socket_path = socket_path
+        self.log_path = log_path
+        self.pid_path = pid_path
+
         self.logger = None
-        self.pid_file = pid_file
         self.configuration = None
         self.monitor = None
-        try:
-            Configuration(config_path)
-        except Exception as e:
-            raise e
 
     def startup(self):
         """Load the configuration and monitor."""
-        if self.log_config_file:
-            logging.config.fileConfig(self.log_config_file, disable_existing_loggers=True)
+        if self.log_path:
+            logging.config.fileConfig(self.log_path, disable_existing_loggers=True)
         else:
             logging.config.dictConfig(self.default_log_config)
         self.logger = logging.getLogger("Server")
@@ -118,7 +117,7 @@ class Server(UnixStreamServer):
         self.configuration = Configuration(self.config_path)
         self.monitor = Monitor(self.configuration)
         self.monitor.reload_config()
-        atexit.register(clean_up, self.pid_file, self.sock_file)
+        atexit.register(clean_up, self.pid_path, self.socket_path)
         self.logger.info("Server startup succeeded.")
 
     def service_actions(self):
@@ -126,18 +125,17 @@ class Server(UnixStreamServer):
         self.monitor.update()
 
     @classmethod
-    def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
+    def start_in_background(cls, *args, **kwargs):
         """Start the server in the background."""
         pid = os.fork()
         if pid > 0:
             # Parent process.
             return
         # Child process.
-        with DaemonContext(detach_process=False):
-            if os.path.exists(pid_file):
-                raise ValueError("Server is already running.")
-
-            with cls(config_path, sock_file, log_file, pid_file) as server:
+        with DaemonContext(
+                working_directory=os.path.curdir,
+                detach_process=False):
+            with cls(*args, **kwargs) as server:
                 server.startup()
                 server.serve_forever()
 
@@ -200,7 +198,6 @@ class Server(UnixStreamServer):
         msg = f"All {len(tasks)} tasks restarted successfully"
         return 0, msg
 
-
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
         self.logger.debug("Stopping server.")
@@ -214,7 +211,10 @@ class Server(UnixStreamServer):
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
         self.logger.debug("Reloading configuration.")
-        self.monitor.reload_config()
+        try:
+            self.monitor.reload_config()
+        except ConfigurationError as e:
+            return 1, f"Configuration error: {e}"
         return 0, "Configuration has been reloaded"
 
     def status(self, tasks=()):
@@ -320,7 +320,6 @@ class CmdHandler(StreamRequestHandler):
             return self.send_response(f"CmdHandler: '{cmd_name}' command not found", 1)
 
         try:
-            print(args)
             status, message = cmd(*args)
             self.send_response(message.rstrip(), status, cmd_name)
         except Exception as e:
