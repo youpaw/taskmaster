@@ -50,25 +50,18 @@ class Task:
 
     def check_start(self):
         """Check if the program has started."""
-        # ToDo validate that it checks properly
         return_code = self.process.poll()
-        if return_code is not None:
-            if return_code in self.program.exitcodes:
-                self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
-                self.status = "SUCCEEDED"
-            else:
-                if time.time() - self.start_time < self.program.startsecs and \
-                        self.restart_count < self.program.startretries:
-                    self.restart_count += 1
-                    self.logger.info(f"Program '{self.program.cmd}' failed to start, restarting count {self.restart_count}/{self.program.startretries}.")
-                    self.start()
-                else:
-                    self.logger.info(f"Program '{self.program.cmd}' failed to start.")
-                    self.status = "FAILED"
-        else:
+        if return_code is None:
             if time.time() - self.start_time > self.program.startsecs:
                 self.logger.info(f"Program '{self.program.cmd}' started successfully.")
                 self.status = "RUNNING"
+            return
+        if return_code in self.program.exitcodes:
+            self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
+            self.status = "SUCCEEDED"
+        else:
+            self.logger.info(f"Program '{self.program.cmd}' failed to start.")
+            self.status = "FAILED"
 
     def stop(self):
         """Stop the program. Status becomes STOPPING."""
@@ -88,31 +81,25 @@ class Task:
             self.status = "STOPPED"
             self.process.wait()
             self.logger.info(f"Program '{self.program.cmd}' stopped.")
-        else:
-            if not self.program.stopwaitsecs or time.time() - self.stop_time > self.program.stopwaitsecs:
-                self.status = "KILLED"
-                self.process.kill()
-                self.logger.info(f"Program '{self.program.cmd}' failed to stop and was killed.")
-                # ToDo check if we should wait for the process kill
+        elif not self.program.stopwaitsecs or time.time() - self.stop_time > self.program.stopwaitsecs:
+            self.status = "KILLED"
+            self.logger.info(f"Program '{self.program.cmd}' failed to stop, killing process.")
+            self.process.kill()
+            self.logger.info(f"Program '{self.program.cmd}' process was killed.")
+            # ToDo check if we should wait for the process kill
 
     def check_running(self):
         """Check if the program is running."""
         return_code = self.process.poll()
-        if return_code is not None:
-            self.process.wait()
-            if return_code in self.program.exitcodes:
-                if self.program.autorestart == "always" and self.restart_count < self.program.startretries:
-                    self.restart_count += 1
-                    self.start()
-                else:
-                    self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
-                    self.status = "SUCCEEDED"
-            else:
-                if self.program.autorestart == "unexpected" and self.restart_count < self.program.startretries:
-                    self.restart_count += 1
-                    self.start()
-                self.logger.info(f"Program '{self.program.cmd}' failed with exit code {return_code}.")
-                self.status = "FAILED"
+        if return_code is None:
+            return
+        self.process.wait()
+        if return_code in self.program.exitcodes:
+            self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
+            self.status = "SUCCEEDED"
+        else:
+            self.logger.info(f"Program '{self.program.cmd}' failed with exit code {return_code}.")
+            self.status = "FAILED"
 
     def restart(self):
         """Restart the program. Status becomes RESTARTING."""
@@ -123,6 +110,18 @@ class Task:
         except TaskError:
             self.start()
 
+    def check_done(self):
+        if self.rebooting:
+            self.start()
+        elif self.status in ["SUCCEEDED", "FAILED"]:
+            prog = self.program
+            if ((prog.autorestart == "always" or
+                 (prog.autorestart == "unexpected" and self.status == "FAILED"))
+                    and self.restart_count < prog.startretries):
+                self.restart_count += 1
+                self.logger.info(f"Restarting program '{prog.cmd}', restart count {self.restart_count}/{prog.startretries}.")
+                self.start()
+
     def update_status(self):
         """Update the status of the program based on the status of its processes."""
         if self.status == "STARTING":
@@ -131,8 +130,8 @@ class Task:
             self.check_stop()
         elif self.status == "RUNNING":
             self.check_running()
-        if self.rebooting and self.is_done():
-            self.start()
+        if self.is_done():
+            self.check_done()
 
     def is_busy(self):
         return self.status in self.BUSY
@@ -161,7 +160,6 @@ class Monitor:
 
     def start_by_name(self, name: str):
         task = self._get_task_by_name(name)
-        self.logger.debug(f"Starting task '{name}'.")
         if task.is_busy():
             raise MonitorError(f"Task '{name}' is busy.")
         elif task.is_done():

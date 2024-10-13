@@ -1,7 +1,7 @@
 programs:
   alive:
     cmd: 'cat'
-    autostart: True
+    autostart: False
     numprocs: 3
     autorestart: "unexpected"
     exitcodes: [0,2]
@@ -18,7 +18,17 @@ programs:
 
   cwd:
     cmd: 'touch newfile'
-    autostart: False
+    autostart: True
     autorestart: "never"
     numprocs: 1
     cwd: /tmp
+
+  env:
+    autostart: True
+    cmd: 'env'
+    env:
+      HOME: 'A'
+      PWD: 'B'
+    stdout: /tmp/env_output
+    stderr: /tmp/env_output
+
