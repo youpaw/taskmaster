@@ -1,15 +1,22 @@
 import logging.config
+import os.path
 import signal
-from dataclasses import dataclass, Field, field
+from dataclasses import dataclass, field
 
 import yaml
+
+
+class ConfigurationError(Exception):
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)
 
 
 @dataclass
 class Program:
     cmd: str
     autostart: bool = False
-    autorestart: str = field(default="never", metadata={"allowed_values": ["never", "always", "unexpected"]})  # TODO complete in monitor.py
+    autorestart: str = field(default="never")  # TODO complete in monitor.py
     exitcodes: list = field(default_factory=lambda: [0])
     startsecs: int = 0
     startretries: int = 3
@@ -24,6 +31,44 @@ class Program:
     @property
     def args(self):
         return self.cmd.split()
+
+    def __post_init__(self):
+        # Validate the program
+        if not self.cmd:
+            raise ConfigurationError("Program cmd is required.")
+        if self.autorestart not in ("never", "always", "unexpected"):
+            raise ConfigurationError(f"Invalid autorestart value: {self.autorestart}")
+        for code in self.exitcodes:
+            if 0 < code > 255:
+                raise ConfigurationError(f"Invalid exit code: {code}")
+        if self.startsecs < 0:
+            raise ConfigurationError("startsecs must be greater than or equal to 0")
+        if self.startretries < 0:
+            raise ConfigurationError("startretries must be greater than or equal to 0")
+        if self.stopsignal < 0:
+            raise ConfigurationError("stopsignal must be greater than or equal to 0")
+        if self.stopwaitsecs < 0:
+            raise ConfigurationError("stopwaitsecs must be greater than or equal to 0")
+        if self.umask < -1:
+            raise ConfigurationError("umask must be greater than or equal to 0")
+        try:
+            if self.stdout:
+                open(self.stdout, "a").close()
+        except Exception as e:
+            raise ConfigurationError(
+                f"Error opening stdout file {self.stdout}. Argument must be a valid file path."
+            )
+        try:
+            if self.stderr:
+                open(self.stderr, "a").close()
+        except Exception as e:
+            raise ConfigurationError(
+                f"Error opening stderr file {self.stderr}. Argument must be a valid file path."
+            )
+        if self.cwd and not os.path.exists(self.cwd):
+            raise ConfigurationError(
+                f"Error opening cwd file {self.cwd}. Argument must be a valid file path."
+            )
 
 
 class Configuration:
@@ -45,18 +90,20 @@ class Configuration:
         program_configs = data.get(self.program_section)
 
         if not program_configs:
-            raise ValueError("No programs section in the configuration.")
+            raise ConfigurationError("No programs section in the configuration.")
         programs = {}
         for name, attributes in program_configs.items():
             try:
                 if name in programs:
-                    raise ValueError(f"Duplicate program name: {name}")
+                    raise ConfigurationError(f"Duplicate program name: {name}")
                 num_procs = attributes.pop("numprocs", None)
                 if num_procs:
                     if not isinstance(num_procs, int):
-                        raise TypeError(f"numprocs must be an integer, not {type(num_procs)}")
+                        raise ConfigurationError(
+                            f"numprocs must be an integer, not {type(num_procs)}"
+                        )
                     if num_procs < 1:
-                        raise ValueError("numprocs must be greater than 0")
+                        raise ConfigurationError("numprocs must be greater than 0")
                     if num_procs == 1:
                         programs[name] = Program(**attributes)
                     else:
@@ -65,7 +112,10 @@ class Configuration:
                 else:
                     programs[name] = Program(**attributes)
             except TypeError as e:
-                print(f"Error in program {name}: {e}")
-                return None
+                if "unexpected keyword argument" in str(e):
+                    argument = str(e).split(" ")[-1]
+                    raise ConfigurationError(
+                        f"Unexpected argument {argument} in program '{name}'"
+                    )
 
         return programs
