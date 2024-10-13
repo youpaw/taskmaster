@@ -30,11 +30,6 @@ def main(config_path: str, socket_path: str, log_path: str, pid_path: str, mode:
         except TypeError as e:
             print(f"Config error: {e}")
             exit(1)
-        try:
-            logging.config.fileConfig(log_path, disable_existing_loggers=True)
-        except Exception as e:
-            print(f"Logging config error: {e}")
-            exit(1)
 
         try:
             Server.start_in_background(
