@@ -135,9 +135,6 @@ class Server(UnixStreamServer):
         with DaemonContext(
                 working_directory=os.path.curdir,
                 detach_process=False):
-            fd = open("/dev/pts/0", "w")
-            sys.stdout = fd
-            sys.stderr = fd
             with cls(*args, **kwargs) as server:
                 server.startup()
                 server.serve_forever()

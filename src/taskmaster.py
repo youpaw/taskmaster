@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 import argparse
 import os
+import sys
+
 from server import Server
 from shell import Shell
 from configuration import Configuration, ConfigurationError
@@ -43,7 +45,7 @@ def main(config_path: str, socket_path: str, log_path: str, pid_path: str, mode:
             )
         except Exception as e:
             print(f"Error starting server: {e}")
-            exit(1)
+            sys.exit(1)
 
     if mode in ("full", "shell"):
         shell = Shell(socket_path)
@@ -53,23 +55,23 @@ def main(config_path: str, socket_path: str, log_path: str, pid_path: str, mode:
 def validate_args(args: argparse.Namespace):
     if not os.path.exists(args.config):
         print(f"Config file {args.config} not found.")
-        exit(1)
+        sys.exit(1)
     config_path = os.path.abspath(args.config)
 
     if args.log_config:
         if not os.path.exists(args.log_config):
             print(f"Log config file {args.log_config} not found.")
-            exit(1)
+            sys.exit(1)
         log_path = os.path.abspath(args.log_config)
     else:
         log_path = None
     if os.path.exists(args.pid):
         print("Taskmaster is already running.")
-        exit(1)
+        sys.exit(1)
     pid_path = os.path.abspath(args.pid)
     if os.path.exists(args.socket):
         print("Socket file already exists.")
-        exit(1)
+        sys.exit(1)
     socket_path = os.path.abspath(args.socket)
     return {
         "config_path": config_path,
