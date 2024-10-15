@@ -49,8 +49,8 @@ class Program:
             raise ConfigurationError("stopsignal must be greater than or equal to 0")
         if self.stopwaitsecs < 0:
             raise ConfigurationError("stopwaitsecs must be greater than or equal to 0")
-        if self.umask < -1:
-            raise ConfigurationError("umask must be greater than or equal to 0")
+        if -1 < self.umask > int('777', 8):
+            raise ConfigurationError("umask value must be in range of 000 to 777 oct or -1")
         try:
             if self.stdout:
                 open(self.stdout, "a").close()

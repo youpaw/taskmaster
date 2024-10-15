@@ -1,9 +1,9 @@
 import logging
-from venv import logger
 
 from configuration import Program, Configuration
 import subprocess
 import time
+import os
 
 
 class TaskError(Exception):
@@ -45,7 +45,6 @@ class Task:
                 stderr=open(self.program.stderr, "a") if self.program.stderr else None,
                 env=self.program.env,
                 umask=self.program.umask,
-
         )
 
     def check_start(self):
@@ -142,6 +141,14 @@ class Task:
     def is_idle(self):
         return self.status == "CREATED"
 
+    def get_rc(self):
+        if self.process:
+            rc = self.process.poll()
+            if rc is None:
+                return "-"
+            return rc
+        return "N/A"
+
 
 class MonitorError(Exception):
     def __init__(self, message):
@@ -150,6 +157,10 @@ class MonitorError(Exception):
 
 
 class Monitor:
+    STATUS_FORMAT = "{:<20} {:<12} {:<8} {:<8} {:<6}\n"
+    STATUS_FORMAT_LEN = 57
+    STATUS_HEADER = STATUS_FORMAT.format('Name', 'Status', 'RC', 'Retries', 'Umask')
+
     def __init__(self, config: Configuration):
         self.config = config
         self.active_tasks = set()
@@ -158,8 +169,19 @@ class Monitor:
         self.logger = logging.getLogger("Monitor")
         self.logger.info("Monitor initialized.")
 
+    @staticmethod
+    def format_tasks_status(tasks):
+        status = Monitor.STATUS_HEADER
+        status += "-" * Monitor.STATUS_FORMAT_LEN + "\n"
+        for name, task in sorted(tasks.items()):
+            umask = task.program.umask
+            umask = os.umask(umask) if umask == -1 else f"{umask:03o}"
+            retries = task.restart_count if task.process else "N/A"
+            status += Monitor.STATUS_FORMAT.format(name, task.status, task.get_rc(), retries, umask)
+        return status
+
     def start_by_name(self, name: str):
-        task = self._get_task_by_name(name)
+        task = self.get_task_by_name(name)
         if task.is_busy():
             raise MonitorError(f"Task '{name}' is busy.")
         elif task.is_done():
@@ -171,7 +193,7 @@ class Monitor:
             raise MonitorError(f"{name}: {e}")
 
     def stop_by_name(self, name: str):
-        task = self._get_task_by_name(name)
+        task = self.get_task_by_name(name)
         if task.is_done():
             raise MonitorError(f"Task '{name}' has already finished.")
         elif task.status == "STOPPING":
@@ -188,7 +210,7 @@ class Monitor:
 
 
     def restart_by_name(self, name: str):
-        task = self._get_task_by_name(name)
+        task = self.get_task_by_name(name)
         if task.rebooting is True:
             raise MonitorError(f"Task '{name}' is already restarting.")
         try:
@@ -198,7 +220,7 @@ class Monitor:
             raise MonitorError(f"{task}: {e}")
         self.active_tasks.add(name)
 
-    def _get_task_by_name(self, name) -> Task:
+    def get_task_by_name(self, name) -> Task:
         if name not in self.tasks:
             raise MonitorError(f"Task '{name}' does not exist.")
         return self.tasks[name]

@@ -2,12 +2,12 @@
 
 - [ ] No exceptions
 - [ ] Shell
-	- [ ] start
-	- [ ] stop
-	- [ ] restart
-	- [ ] status
-	- [ ] reload
-	- [ ] stop_server
+	- [x] start
+	- [x] stop
+	- [x] restart
+	- [x] status
+	- [x] reload
+	- [x] stop_server
 - [ ] configuration
 	- [x] cmd  
 	- [x] autostart  
@@ -28,7 +28,14 @@
 	- [ ] restart
 	- [ ] unexpected exit
 	- [ ] stop retry
-- [ ] reload from shell
-- [ ] reload from SIGHUP
+- [x] reload from shell
+- [ ] reload from SIGHUP 
+
+### Bonuses
+
+- [ ] client/server
+- [ ] --help flag
+- [ ] --all flag
+- [ ] status formatting
 
 #knowledge #school42

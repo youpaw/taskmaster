@@ -1,11 +1,9 @@
 import os
-import sys
 import threading
 import shlex
 import getopt
 
 import atexit
-from venv import logger
 
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
@@ -71,6 +69,10 @@ class Server(UnixStreamServer):
             "help": "Show the available commands",
         },
     }
+
+    service_api = [
+        "_service_get_tasks",
+    ]
 
     options_info = {
         "all": "Execute for all tasks",
@@ -225,7 +227,7 @@ class Server(UnixStreamServer):
             tasks_dict = {}
             for name in tasks:
                 try:
-                    tasks_dict[name] = self.monitor._get_task_by_name(name)
+                    tasks_dict[name] = self.monitor.get_task_by_name(name)
                 except MonitorError as e:
                     err_msg += f"{e}\n"
                     fail_cnt += 1
@@ -233,15 +235,13 @@ class Server(UnixStreamServer):
         else:
             tasks = self.monitor.tasks
         self.logger.debug(f"Getting status for tasks: {tasks}")
-        if tasks:
-            status_msg = "Programs status:\n"
-            for name, task in tasks.items():
-                status_msg += f"  {name}: {task.status}\n"
-        else:
-            status_msg = "No tasks found\n"
+        status_msg = Monitor.format_tasks_status(tasks) if tasks else "No tasks found\n"
         if fail_cnt:
             return 2, status_msg + f"\n{err_msg}"
         return 0, status_msg
+
+    def _service_get_tasks(self):
+        return {"tasks": list(self.monitor.tasks.keys())}
 
 
 class CmdHandler(StreamRequestHandler):
@@ -302,11 +302,24 @@ class CmdHandler(StreamRequestHandler):
         response = {"msg": f"{msg}", "status": status, "command": f"{cmd}"}
         self.wfile.write(json.dumps(response).encode(MSG_ENCODING))
 
+    def _handle_service(self, service_name):
+        self.logger.debug(f"CmdHandler: Service action '{service_name}' requested")
+        cmd = getattr(self.server, service_name, None)
+        if cmd is None:
+            self.logger.debug(f"CmdHandler: Service {service_name} does not exist")
+            return
+        try:
+            self.wfile.write(json.dumps(cmd()).encode(MSG_ENCODING))
+        except Exception as e:
+            self.logger.debug(f"CmdHandler: Service {service_name} error: {e}")
+
     def handle(self):
         data = self.request.recv(BUFFER_SIZE).decode(MSG_ENCODING)
+        if data in Server.service_api:
+            return self._handle_service(data)
         try:
             cmd_name, args, help_on = self.parse_args(shlex.split(data))
-            logger.debug(f"CmdHandler: received command '{cmd_name}' with args: {args} help: '{help_on}'")
+            self.logger.debug(f"CmdHandler: received command '{cmd_name}' with args: {args} help: '{help_on}'")
         except ValueError as e:
             return self.send_response(e, 1)
         except Exception as e:
