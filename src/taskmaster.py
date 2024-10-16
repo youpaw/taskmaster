@@ -2,11 +2,10 @@
 import argparse
 import os
 import sys
+from distutils.command.config import config
 
 from server import Server
 from shell import Shell
-from configuration import Configuration, ConfigurationError
-import logging.config
 
 
 cur_path = os.path.dirname(os.path.abspath(__file__))
@@ -16,21 +15,7 @@ DEFAULT_SOCKET_FILE_PATH = cur_path + "/taskmaster.sock"
 
 
 def main(config_path: str, socket_path: str, log_path: str, pid_path: str, mode: str):
-    if mode in ("full", "daemon"):
-        if os.path.exists(pid_path):
-            print(
-                f"Pid file {pid_path} already exists. Taskmaster is already running. Exiting."
-            )
-            exit(1)
-        try:
-            Configuration(config_path)
-        except ConfigurationError as e:
-            print(f"Config error: {e}")
-            exit(1)
-        except TypeError as e:
-            print(f"Config error: {e}")
-            exit(1)
-
+    if mode == "server":
         try:
             Server.start_in_background(
                 config_path=config_path,
@@ -42,32 +27,43 @@ def main(config_path: str, socket_path: str, log_path: str, pid_path: str, mode:
             print(f"Error starting server: {e}")
             sys.exit(1)
 
-    if mode in ("full", "shell"):
+    if mode == "shell":
         shell = Shell(socket_path)
         shell.run()
 
 
 def validate_args(args: argparse.Namespace):
-    if not os.path.exists(args.config):
-        print(f"Config file {args.config} not found.")
-        sys.exit(1)
-    config_path = os.path.abspath(args.config)
-
-    if args.log_config:
-        if not os.path.exists(args.log_config):
-            print(f"Log config file {args.log_config} not found.")
+    config_path = None
+    log_path = None
+    pid_path = None
+    if args.mode == "server":
+        if not os.path.exists(args.config):
+            print(f"Config file {args.config} not found.")
             sys.exit(1)
-        log_path = os.path.abspath(args.log_config)
-    else:
-        log_path = None
-    if os.path.exists(args.pid):
-        print("Taskmaster is already running.")
-        sys.exit(1)
-    pid_path = os.path.abspath(args.pid)
-    if os.path.exists(args.socket):
-        print("Socket file already exists.")
-        sys.exit(1)
+        config_path = os.path.abspath(args.config)
+
+        if args.log_config:
+            if not os.path.exists(args.log_config):
+                print(f"Log config file {args.log_config} not found.")
+                sys.exit(1)
+            log_path = os.path.abspath(args.log_config)
+
+        pid_path = os.path.abspath(args.pid)
+        if os.path.exists(pid_path):
+            print(
+                f"Pid file {pid_path} already exists. Taskmaster is already running. Exiting.")
+            exit(1)
+
+        if os.path.exists(args.socket):
+            print("Socket file already exists. Taskmaster is already running. Exiting.")
+            sys.exit(1)
+
+    if args.mode == "shell":
+        if not os.path.exists(args.socket):
+            print("Socket file not found.")
+            sys.exit(1)
     socket_path = os.path.abspath(args.socket)
+
     return {
         "config_path": config_path,
         "log_path": log_path,
@@ -115,9 +111,9 @@ if __name__ == "__main__":
         "-m",
         "--mode",
         help="Taskmaster start mode",
-        required=False,
+        required=True,
         default="full",
-        choices=["full", "shell", "daemon"],
+        choices=["shell", "server"],
     )
 
     arguments = parser.parse_args()

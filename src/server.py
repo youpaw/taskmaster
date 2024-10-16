@@ -109,17 +109,31 @@ class Server(UnixStreamServer):
 
     def startup(self):
         """Load the configuration and monitor."""
-        if self.log_path:
-            logging.config.fileConfig(self.log_path, disable_existing_loggers=True)
-        else:
-            logging.config.dictConfig(self.default_log_config)
-        self.logger = logging.getLogger("Server")
+        # Register cleanup functions and signal handlers
+        atexit.register(clean_up, self.pid_path, self.socket_path)
         signal.signal(signal.SIGTERM, self.stop_server)
         signal.signal(signal.SIGHUP, self.reload)
-        self.configuration = Configuration(self.config_path)
+
+        # setup logging
+        try:
+            logging.config.fileConfig(self.log_path, disable_existing_loggers=True)
+        except Exception:
+            # Something went wrong with the log config,
+            # either the file is missing or the config is invalid.
+            # Fallback to the default log config.
+            # Loggers are disabled by default due to the epsense of stdout/stderr.
+            logging.config.dictConfig(self.default_log_config)
+        self.logger = logging.getLogger("Server")
+
+        # Setup configuration and monitor
+        try:
+            self.configuration = Configuration(self.config_path)
+        except ConfigurationError as e:
+            self.logger.error(f"Configuration error: {e}")
+            raise
         self.monitor = Monitor(self.configuration)
         self.monitor.reload_config()
-        atexit.register(clean_up, self.pid_path, self.socket_path)
+
         self.logger.info("Server startup succeeded.")
 
     def service_actions(self):
@@ -129,14 +143,8 @@ class Server(UnixStreamServer):
     @classmethod
     def start_in_background(cls, *args, **kwargs):
         """Start the server in the background."""
-        pid = os.fork()
-        if pid > 0:
-            # Parent process.
-            return
         # Child process.
-        with DaemonContext(
-                working_directory=os.path.curdir,
-                detach_process=False):
+        with DaemonContext(working_directory=os.path.curdir):
             with cls(*args, **kwargs) as server:
                 server.startup()
                 server.serve_forever()
