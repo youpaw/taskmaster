@@ -1,11 +1,11 @@
 programs:
   alive:
     cmd: 'cat'
-    autostart: True
+    autostart: False
     numprocs: 3
     autorestart: "unexpected"
-    exitcodes: [0,2]
-    startsecs: 5
+    exitcodes: [0,1,2,130]
+    startsecs: 0
     startretries: 3
 
   simple:
@@ -15,10 +15,56 @@ programs:
     numprocs: 2
     startsecs: 5
     umask: 22
+    stopsignal: 2
+
+  codes:
+    cmd: 'sleep 60'
+    autostart: False
+    autorestart: "unexpected"
+    exitcodes: [0,3]
+    numprocs: 1
+    startsecs: 5
+    umask: 22
 
   cwd:
     cmd: 'touch newfile'
-    autostart: False
+    autostart: True
     autorestart: "never"
     numprocs: 1
     cwd: /tmp
+
+  env:
+    autostart: True
+    cmd: 'env'
+    env:
+      HOME: 'A'
+      PWD: 'B'
+    stdout: /tmp/env_output
+    stderr: /tmp/env_output
+
+
+  signal:
+    cmd: 'python3 test/return_codes.py -t 120 -rc 123'
+    autostart: False
+    autorestart: "unexpected"
+    numprocs: 1
+    startsecs: 5
+    stopsignal: 8
+    stdout: /tmp/signal_output
+    stderr: /tmp/signal_err
+
+  signal_stop:
+    cmd: 'python3 test/return_codes.py -t 120 -rc 123 -s 10'
+    autostart: False
+    autorestart: "unexpected"
+    numprocs: 1
+    startsecs: 5
+    stopsignal: 10
+    stdout: /tmp/signal_output
+    stderr: /tmp/signal_err
+
+  wrong_command:
+    cmd: 'this_command_does_not_exist'
+    autostart: False
+
+

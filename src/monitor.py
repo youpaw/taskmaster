@@ -1,10 +1,12 @@
 import logging
-from venv import logger
 
 from configuration import Program, Configuration
 import subprocess
 import time
+import os
 
+UMASK = os.umask(0)
+os.umask(UMASK)
 
 class TaskError(Exception):
     def __init__(self, message):
@@ -28,51 +30,57 @@ class Task:
         self.logger = logging.getLogger("Task")
 
     def __repr__(self):
-        return f"<Task {self.program.cmd} in status {self.status} with pid {self.process.pid if self.process else '?'}>"
-
+        return f"<Task '{self.program.cmd}' in status {self.status} with pid {self.process.pid if self.process else '?'}>"
 
     def start(self):
         """Start the program. Status becomes STARTING."""
         if self.process and self.process.poll() is None:
             raise TaskError("Task has already started.")
-        self.status = "STARTING"
         self.rebooting = False
         self.start_time = time.time()
-        self.process = subprocess.Popen(
-                args=self.program.args,
-                cwd=self.program.cwd,
-                stdout=open(self.program.stdout, "a") if self.program.stdout else None,
-                stderr=open(self.program.stderr, "a") if self.program.stderr else None,
-                env=self.program.env,
-                umask=self.program.umask,
-
-        )
+        stdout, stderr = None, None
+        try:
+            stdout = open(self.program.stdout, "a") if self.program.stdout else None
+            stderr = open(self.program.stderr, "a") if self.program.stderr else None
+            self.process = subprocess.Popen(
+                    args=self.program.args,
+                    cwd=self.program.cwd,
+                    stdout=stdout,
+                    stderr=stderr,
+                    env=self.program.env,
+                    umask=self.program.umask,
+            )
+            self.status = "STARTING"
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
+            raise TaskError(
+                f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
+        finally:
+            if stdout:
+                stdout.close()
+            if stderr:
+                stderr.close()
 
     def check_start(self):
         """Check if the program has started."""
-        # ToDo validate that it checks properly
         return_code = self.process.poll()
-        if return_code is not None:
-            if return_code in self.program.exitcodes:
-                self.logger.info(f"Program '{self.program.cmd}' started successfully.")
-                self.status = "SUCCEEDED"
-            else:
-                if time.time() - self.start_time < self.program.startsecs and \
-                        self.restart_count < self.program.startretries:
-                    self.restart_count += 1
-                    self.logger.info(f"Program '{self.program.cmd}' failed to start. Restarting for the {self.restart_count} time.")
-                    self.start()
-                else:
-                    self.logger.info(f"Program '{self.program.cmd}' failed to start.")
-                    self.status = "FAILED"
-        else:
+        if return_code is None:
             if time.time() - self.start_time > self.program.startsecs:
+                self.logger.info(f"Program '{self.program.cmd}' started successfully.")
                 self.status = "RUNNING"
+            return
+        if return_code in self.program.exitcodes:
+            self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
+            self.status = "SUCCEEDED"
+        else:
+            self.logger.info(f"Program '{self.program.cmd}' failed to start.")
+            self.status = "FAILED"
 
     def stop(self):
         """Stop the program. Status becomes STOPPING."""
         if self.process:
-            if self.process.poll():
+            if self.process.poll() is not None:
                 raise TaskError("Task is not running.")
         else:
             raise TaskError("Task is not initialized.")
@@ -87,40 +95,46 @@ class Task:
             self.status = "STOPPED"
             self.process.wait()
             self.logger.info(f"Program '{self.program.cmd}' stopped.")
-        else:
-            if not self.program.stopwaitsecs or time.time() - self.stop_time > self.program.stopwaitsecs:
-                self.status = "KILLED"
-                self.process.kill()
-                self.logger.info(f"Program '{self.program.cmd}' failed to stop and was killed.")
-                # ToDo check if we should wait for the process kill
+        elif not self.program.stopwaitsecs or time.time() - self.stop_time > self.program.stopwaitsecs:
+            self.status = "KILLED"
+            self.logger.info(f"Program '{self.program.cmd}' failed to stop, killing process.")
+            self.process.kill()
+            self.process.wait()
+            self.logger.info(f"Program '{self.program.cmd}' process was killed.")
 
     def check_running(self):
         """Check if the program is running."""
         return_code = self.process.poll()
-        if return_code is not None:
-            self.process.wait()
-            if return_code in self.program.exitcodes:
-                if self.program.autorestart == "always" and self.restart_count < self.program.startretries:
-                    self.restart_count += 1
-                    self.start()
-                else:
-                    self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
-                    self.status = "SUCCEEDED"
-            else:
-                if self.program.autorestart == "unexpected" and self.restart_count < self.program.startretries:
-                    self.restart_count += 1
-                    self.start()
-                self.logger.info(f"Program '{self.program.cmd}' failed with exit code {return_code}.")
-                self.status = "FAILED"
+        if return_code is None:
+            return
+        self.process.wait()
+        if return_code in self.program.exitcodes:
+            self.logger.info(f"Program '{self.program.cmd}' exited with code {return_code}.")
+            self.status = "SUCCEEDED"
+        else:
+            self.logger.info(f"Program '{self.program.cmd}' failed with exit code {return_code}.")
+            self.status = "FAILED"
 
     def restart(self):
         """Restart the program. Status becomes RESTARTING."""
+        self.logger.info(f"Restarting program '{self.program.cmd}'.")
         try:
             self.stop()
             self.rebooting = True
-            self.logger.info(f"Restarting program '{self.program.cmd}'.")
         except TaskError:
             self.start()
+
+    def check_done(self):
+        if self.rebooting:
+            self.start()
+        elif self.status in ["SUCCEEDED", "FAILED"]:
+            prog = self.program
+            if ((prog.autorestart == "always" or
+                 (prog.autorestart == "unexpected" and self.status == "FAILED"))
+                    and self.restart_count < prog.startretries):
+                self.restart_count += 1
+                self.logger.info(f"Restarting program '{prog.cmd}', restart count {self.restart_count}/{prog.startretries}.")
+                self.start()
 
     def update_status(self):
         """Update the status of the program based on the status of its processes."""
@@ -130,8 +144,8 @@ class Task:
             self.check_stop()
         elif self.status == "RUNNING":
             self.check_running()
-        if self.rebooting and self.is_done():
-            self.start()
+        if self.is_done():
+            self.check_done()
 
     def is_busy(self):
         return self.status in self.BUSY
@@ -142,6 +156,14 @@ class Task:
     def is_idle(self):
         return self.status == "CREATED"
 
+    def get_rc(self):
+        if self.process:
+            rc = self.process.poll()
+            if rc is None:
+                return "-"
+            return rc
+        return "N/A"
+
 
 class MonitorError(Exception):
     def __init__(self, message):
@@ -150,6 +172,10 @@ class MonitorError(Exception):
 
 
 class Monitor:
+    STATUS_FORMAT = "{:<20} {:<12} {:<8} {:<8} {:<6}\n"
+    STATUS_FORMAT_LEN = 57
+    STATUS_HEADER = STATUS_FORMAT.format('Name', 'Status', 'RC', 'Retries', 'Umask')
+
     def __init__(self, config: Configuration):
         self.config = config
         self.active_tasks = set()
@@ -158,9 +184,19 @@ class Monitor:
         self.logger = logging.getLogger("Monitor")
         self.logger.info("Monitor initialized.")
 
+    @staticmethod
+    def format_tasks_status(tasks):
+        status = Monitor.STATUS_HEADER
+        status += "-" * Monitor.STATUS_FORMAT_LEN + "\n"
+        for name, task in sorted(tasks.items()):
+            umask = UMASK if task.program.umask == -1 else task.program.umask
+            umask = f"{umask:03o}"
+            retries = task.restart_count if task.process else "N/A"
+            status += Monitor.STATUS_FORMAT.format(name, task.status, task.get_rc(), retries, umask)
+        return status
+
     def start_by_name(self, name: str):
-        task = self._get_task_by_name(name)
-        self.logger.debug(f"Starting task '{name}'.")
+        task = self.get_task_by_name(name)
         if task.is_busy():
             raise MonitorError(f"Task '{name}' is busy.")
         elif task.is_done():
@@ -172,7 +208,7 @@ class Monitor:
             raise MonitorError(f"{name}: {e}")
 
     def stop_by_name(self, name: str):
-        task = self._get_task_by_name(name)
+        task = self.get_task_by_name(name)
         if task.is_done():
             raise MonitorError(f"Task '{name}' has already finished.")
         elif task.status == "STOPPING":
@@ -189,17 +225,17 @@ class Monitor:
 
 
     def restart_by_name(self, name: str):
-        task = self._get_task_by_name(name)
+        task = self.get_task_by_name(name)
         if task.rebooting is True:
             raise MonitorError(f"Task '{name}' is already restarting.")
         try:
-            self.logger.debug(f"Restarting task ''{name}''.")
+            self.logger.debug(f"Restarting task '{name}'.")
             task.restart()
         except TaskError as e:
-            raise MonitorError(f"{task}: {e}")
+            raise MonitorError(f"{name}: {e}")
         self.active_tasks.add(name)
 
-    def _get_task_by_name(self, name) -> Task:
+    def get_task_by_name(self, name) -> Task:
         if name not in self.tasks:
             raise MonitorError(f"Task '{name}' does not exist.")
         return self.tasks[name]
@@ -237,7 +273,7 @@ class Monitor:
             self._create_task(name, new_progs[name])
         # Process removed programs
         removed_ids = old_ids - new_ids
-        self.logger.debug(f"Removed programs: {removed_ids}")
+        self.logger.debug(f"Removed programs: {removed_ids or '0'}")
         for name in removed_ids:
             self.logger.info(f"Removing program '{name}'.")
             self._retire_task(name)
@@ -254,7 +290,10 @@ class Monitor:
     def _create_task(self, name, program: Program):
         self.tasks[name] = task = Task(program)
         if program.autostart:
-            task.start()
+            try:
+                task.start()
+            except TaskError as e:
+                self.logger.error(f"Failed to autostart program '{name}': {e}")
         self.active_tasks.add(name)
 
     def _retire_task(self, name: str):

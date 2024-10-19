@@ -4,7 +4,6 @@ import shlex
 import getopt
 
 import atexit
-from venv import logger
 
 from daemon import DaemonContext
 from socketserver import UnixStreamServer, StreamRequestHandler
@@ -15,6 +14,7 @@ import logging.config
 
 from configuration import Configuration
 from monitor import Monitor, MonitorError
+from configuration import ConfigurationError
 
 BUFFER_SIZE = 1024
 MSG_ENCODING = 'utf-8'
@@ -70,6 +70,10 @@ class Server(UnixStreamServer):
         },
     }
 
+    service_api = [
+        "_service_get_tasks",
+    ]
+
     options_info = {
         "all": "Execute for all tasks",
         "help": "Show this message",
@@ -91,34 +95,45 @@ class Server(UnixStreamServer):
         },
     }
 
-    def __init__(self, config_path: str, sock_file: str, log_config_file: str, pid_file: str):
+    def __init__(self, config_path: str, socket_path: str, log_path: str, pid_path: str):
         """Initialize the server."""
-        super().__init__(sock_file, CmdHandler)
+        super().__init__(socket_path, CmdHandler)
         self.config_path = config_path
-        self.sock_file = sock_file
-        self.log_config_file = log_config_file
+        self.socket_path = socket_path
+        self.log_path = log_path
+        self.pid_path = pid_path
+
         self.logger = None
-        self.pid_file = pid_file
         self.configuration = None
         self.monitor = None
-        try:
-            Configuration(config_path)
-        except Exception as e:
-            raise e
 
     def startup(self):
         """Load the configuration and monitor."""
-        if self.log_config_file:
-            logging.config.fileConfig(self.log_config_file, disable_existing_loggers=True)
-        else:
-            logging.config.dictConfig(self.default_log_config)
-        self.logger = logging.getLogger("Server")
+        # Register cleanup functions and signal handlers
+        atexit.register(clean_up, self.pid_path, self.socket_path)
         signal.signal(signal.SIGTERM, self.stop_server)
         signal.signal(signal.SIGHUP, self.reload)
-        self.configuration = Configuration(self.config_path)
+
+        # setup logging
+        try:
+            logging.config.fileConfig(self.log_path, disable_existing_loggers=True)
+        except Exception:
+            # Something went wrong with the log config,
+            # either the file is missing or the config is invalid.
+            # Fallback to the default log config.
+            # Loggers are disabled by default due to the epsense of stdout/stderr.
+            logging.config.dictConfig(self.default_log_config)
+        self.logger = logging.getLogger("Server")
+
+        # Setup configuration and monitor
+        try:
+            self.configuration = Configuration(self.config_path)
+        except ConfigurationError as e:
+            self.logger.error(f"Configuration error: {e}")
+            raise
         self.monitor = Monitor(self.configuration)
         self.monitor.reload_config()
-        atexit.register(clean_up, self.pid_file, self.sock_file)
+
         self.logger.info("Server startup succeeded.")
 
     def service_actions(self):
@@ -126,18 +141,11 @@ class Server(UnixStreamServer):
         self.monitor.update()
 
     @classmethod
-    def start_in_background(cls, config_path: str, sock_file: str, log_file: str, pid_file: str):
+    def start_in_background(cls, *args, **kwargs):
         """Start the server in the background."""
-        pid = os.fork()
-        if pid > 0:
-            # Parent process.
-            return
         # Child process.
-        with DaemonContext(detach_process=False):
-            if os.path.exists(pid_file):
-                raise ValueError("Server is already running.")
-
-            with cls(config_path, sock_file, log_file, pid_file) as server:
+        with DaemonContext(working_directory=os.path.curdir):
+            with cls(*args, **kwargs) as server:
                 server.startup()
                 server.serve_forever()
 
@@ -156,7 +164,7 @@ class Server(UnixStreamServer):
             except MonitorError as e:
                 msg += f"  {e}\n"
                 fail_cnt += 1
-        if fail_cnt == 0:
+        if fail_cnt:
             msg = f"Failed to start {fail_cnt} out of {len(tasks)} tasks:\n" + msg
             return 2, msg
         msg = f"All {len(tasks)} tasks started successfully"
@@ -200,7 +208,6 @@ class Server(UnixStreamServer):
         msg = f"All {len(tasks)} tasks restarted successfully"
         return 0, msg
 
-
     def stop_server(self, signum=None, frame=None):
         """Stop the server."""
         self.logger.debug("Stopping server.")
@@ -214,7 +221,12 @@ class Server(UnixStreamServer):
     def reload(self, signum=None, frame=None):
         """Reload the configuration."""
         self.logger.debug("Reloading configuration.")
-        self.monitor.reload_config()
+        try:
+            self.monitor.reload_config()
+        except ConfigurationError as e:
+            return 1, f"Configuration error: {e}"
+        except Exception as e:
+            return 1, f"Some error {e}"
         return 0, "Configuration has been reloaded"
 
     def status(self, tasks=()):
@@ -225,7 +237,7 @@ class Server(UnixStreamServer):
             tasks_dict = {}
             for name in tasks:
                 try:
-                    tasks_dict[name] = self.monitor._get_task_by_name(name)
+                    tasks_dict[name] = self.monitor.get_task_by_name(name)
                 except MonitorError as e:
                     err_msg += f"{e}\n"
                     fail_cnt += 1
@@ -233,15 +245,13 @@ class Server(UnixStreamServer):
         else:
             tasks = self.monitor.tasks
         self.logger.debug(f"Getting status for tasks: {tasks}")
-        if tasks:
-            status_msg = "Programs status:\n"
-            for name, task in tasks.items():
-                status_msg += f"  {name}: {task.status}\n"
-        else:
-            status_msg = "No tasks found\n"
+        status_msg = Monitor.format_tasks_status(tasks) if tasks else "No tasks found\n"
         if fail_cnt:
             return 2, status_msg + f"\n{err_msg}"
         return 0, status_msg
+
+    def _service_get_tasks(self):
+        return {"tasks": list(self.monitor.tasks.keys())}
 
 
 class CmdHandler(StreamRequestHandler):
@@ -302,11 +312,24 @@ class CmdHandler(StreamRequestHandler):
         response = {"msg": f"{msg}", "status": status, "command": f"{cmd}"}
         self.wfile.write(json.dumps(response).encode(MSG_ENCODING))
 
+    def _handle_service(self, service_name):
+        self.logger.debug(f"CmdHandler: Service action '{service_name}' requested")
+        cmd = getattr(self.server, service_name, None)
+        if cmd is None:
+            self.logger.debug(f"CmdHandler: Service {service_name} does not exist")
+            return
+        try:
+            self.wfile.write(json.dumps(cmd()).encode(MSG_ENCODING))
+        except Exception as e:
+            self.logger.debug(f"CmdHandler: Service {service_name} error: {e}")
+
     def handle(self):
         data = self.request.recv(BUFFER_SIZE).decode(MSG_ENCODING)
+        if data in Server.service_api:
+            return self._handle_service(data)
         try:
             cmd_name, args, help_on = self.parse_args(shlex.split(data))
-            logger.debug(f"CmdHandler: received command '{cmd_name}' with args: {args} help: '{help_on}'")
+            self.logger.debug(f"CmdHandler: received command '{cmd_name}' with args: {args} help: '{help_on}'")
         except ValueError as e:
             return self.send_response(e, 1)
         except Exception as e:
@@ -320,7 +343,6 @@ class CmdHandler(StreamRequestHandler):
             return self.send_response(f"CmdHandler: '{cmd_name}' command not found", 1)
 
         try:
-            print(args)
             status, message = cmd(*args)
             self.send_response(message.rstrip(), status, cmd_name)
         except Exception as e:
