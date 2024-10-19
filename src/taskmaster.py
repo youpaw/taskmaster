@@ -16,16 +16,12 @@ DEFAULT_SOCKET_FILE_PATH = cur_path + "/taskmaster.sock"
 
 def main(config_path: str, socket_path: str, log_path: str, pid_path: str, mode: str):
     if mode == "server":
-        try:
-            Server.start_in_background(
-                config_path=config_path,
-                socket_path=socket_path,
-                log_path=log_path,
-                pid_path=pid_path,
-            )
-        except Exception as e:
-            print(f"Error starting server: {e}")
-            sys.exit(1)
+        Server.start_in_background(
+            config_path=config_path,
+            socket_path=socket_path,
+            log_path=log_path,
+            pid_path=pid_path,
+        )
 
     if mode == "shell":
         shell = Shell(socket_path)

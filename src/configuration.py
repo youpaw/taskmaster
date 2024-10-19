@@ -24,7 +24,7 @@ class Program:
     stopwaitsecs: int = 10
     stdout: str = None
     stderr: str = None
-    env: dict = None  # TODO test this
+    env: dict = None
     cwd: str = None
     umask: int = -1
 
@@ -51,20 +51,6 @@ class Program:
             raise ConfigurationError("stopwaitsecs must be greater than or equal to 0")
         if -1 < self.umask > int('777', 8):
             raise ConfigurationError("umask value must be in range of 000 to 777 oct or -1")
-        try:
-            if self.stdout:
-                open(self.stdout, "a").close()
-        except Exception as e:
-            raise ConfigurationError(
-                f"Error opening stdout file {self.stdout}. Argument must be a valid file path."
-            )
-        try:
-            if self.stderr:
-                open(self.stderr, "a").close()
-        except Exception as e:
-            raise ConfigurationError(
-                f"Error opening stderr file {self.stderr}. Argument must be a valid file path."
-            )
         if self.cwd and not os.path.exists(self.cwd):
             raise ConfigurationError(
                 f"Error opening cwd file {self.cwd}. Argument must be a valid file path."
@@ -114,8 +100,15 @@ class Configuration:
             except TypeError as e:
                 if "unexpected keyword argument" in str(e):
                     argument = str(e).split(" ")[-1]
-                    raise ConfigurationError(
+                    self.logger.error(
                         f"Unexpected argument {argument} in program '{name}'"
                     )
+                else:
+                    self.logger.error(f"Undefined error parsing program {name} - {e}")
+            except ConfigurationError as e:
+                self.logger.error(f"Error parsing program '{name}' - {e}")
+
+            except Exception as e:
+                self.logger.error(f"Undefined error parsing program {name} - {e}")
 
         return programs

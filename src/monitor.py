@@ -35,17 +35,24 @@ class Task:
         """Start the program. Status becomes STARTING."""
         if self.process and self.process.poll() is None:
             raise TaskError("Task has already started.")
-        self.status = "STARTING"
         self.rebooting = False
         self.start_time = time.time()
-        self.process = subprocess.Popen(
-                args=self.program.args,
-                cwd=self.program.cwd,
-                stdout=open(self.program.stdout, "a") if self.program.stdout else None,
-                stderr=open(self.program.stderr, "a") if self.program.stderr else None,
-                env=self.program.env,
-                umask=self.program.umask,
-        )
+        try:
+            self.process = subprocess.Popen(
+                    args=self.program.args,
+                    cwd=self.program.cwd,
+                    stdout=open(self.program.stdout, "a+") if self.program.stdout else None,
+                    stderr=open(self.program.stderr, "a+") if self.program.stderr else None,
+                    env=self.program.env,
+                    umask=self.program.umask,
+            )
+
+            self.status = "STARTING"
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
+            raise TaskError(
+                f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
 
     def check_start(self):
         """Check if the program has started."""
@@ -258,7 +265,7 @@ class Monitor:
             self._create_task(name, new_progs[name])
         # Process removed programs
         removed_ids = old_ids - new_ids
-        self.logger.debug(f"Removed programs: {removed_ids}")
+        self.logger.debug(f"Removed programs: {removed_ids or '0'}")
         for name in removed_ids:
             self.logger.info(f"Removing program '{name}'.")
             self._retire_task(name)

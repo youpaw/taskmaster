@@ -12,7 +12,7 @@
 	- [x] cmd  
 	- [x] autostart  
 	- [x] autorestart  
-	- [ ] exitcodes  
+	- [x] exitcodes  
 	- [x] startsecs  
 	- [x] startretries  
 	- [ ] stopsignal  
@@ -29,7 +29,7 @@
 	- [ ] unexpected exit
 	- [ ] stop retry
 - [x] reload from shell
-- [ ] reload from SIGHUP 
+- [x] reload from SIGHUP 
 
 ### Bonuses
 

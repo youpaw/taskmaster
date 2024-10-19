@@ -225,6 +225,8 @@ class Server(UnixStreamServer):
             self.monitor.reload_config()
         except ConfigurationError as e:
             return 1, f"Configuration error: {e}"
+        except Exception as e:
+            return 1, f"Some error {e}"
         return 0, "Configuration has been reloaded"
 
     def status(self, tasks=()):
