@@ -57,3 +57,7 @@ programs:
     cmd: 'this_command_does_not_exist'
     autostart: False
 
+  wrong_command_autostart:
+    cmd: 'this_command_does_not_exist'
+    autostart: True
+

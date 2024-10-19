@@ -288,7 +288,10 @@ class Monitor:
     def _create_task(self, name, program: Program):
         self.tasks[name] = task = Task(program)
         if program.autostart:
-            task.start()
+            try:
+                task.start()
+            except TaskError as e:
+                self.logger.error(f"Failed to autostart program '{name}': {e}")
         self.active_tasks.add(name)
 
     def _retire_task(self, name: str):
