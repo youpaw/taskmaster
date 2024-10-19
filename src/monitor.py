@@ -5,6 +5,8 @@ import subprocess
 import time
 import os
 
+UMASK = os.umask(0)
+os.umask(UMASK)
 
 class TaskError(Exception):
     def __init__(self, message):
@@ -187,8 +189,8 @@ class Monitor:
         status = Monitor.STATUS_HEADER
         status += "-" * Monitor.STATUS_FORMAT_LEN + "\n"
         for name, task in sorted(tasks.items()):
-            umask = task.program.umask
-            umask = os.umask(umask) if umask == -1 else f"{umask:03o}"
+            umask = UMASK if task.program.umask == -1 else task.program.umask
+            umask = f"{umask:03o}"
             retries = task.restart_count if task.process else "N/A"
             status += Monitor.STATUS_FORMAT.format(name, task.status, task.get_rc(), retries, umask)
         return status
@@ -230,7 +232,7 @@ class Monitor:
             self.logger.debug(f"Restarting task '{name}'.")
             task.restart()
         except TaskError as e:
-            raise MonitorError(f"{task}: {e}")
+            raise MonitorError(f"{name}: {e}")
         self.active_tasks.add(name)
 
     def get_task_by_name(self, name) -> Task:
