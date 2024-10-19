@@ -38,14 +38,20 @@ class Task:
         self.rebooting = False
         self.start_time = time.time()
         try:
+            stdout = open(self.program.stdout, "a") if self.program.stdout else None
+            stderr = open(self.program.stderr, "a") if self.program.stderr else None
             self.process = subprocess.Popen(
                     args=self.program.args,
                     cwd=self.program.cwd,
-                    stdout=open(self.program.stdout, "a+") if self.program.stdout else None,
-                    stderr=open(self.program.stderr, "a+") if self.program.stderr else None,
+                    stdout=stdout,
+                    stderr=stderr,
                     env=self.program.env,
                     umask=self.program.umask,
             )
+            if self.program.stdout:
+                stdout.close()
+            if self.program.stderr:
+                stderr.close()
 
             self.status = "STARTING"
         except Exception as e:

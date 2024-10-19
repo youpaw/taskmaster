@@ -2,7 +2,6 @@
 import argparse
 import os
 import sys
-from distutils.command.config import config
 
 from server import Server
 from shell import Shell

@@ -49,8 +49,12 @@ class Program:
             raise ConfigurationError("stopsignal must be greater than or equal to 0")
         if self.stopwaitsecs < 0:
             raise ConfigurationError("stopwaitsecs must be greater than or equal to 0")
+        try:
+            self.umask = int(str(self.umask), 8)  # Convert to INT from octal int (?)
+        except ValueError:
+            raise ConfigurationError("umask was not a valid octal value")
         if -1 < self.umask > int('777', 8):
-            raise ConfigurationError("umask value must be in range of 000 to 777 oct or -1")
+            raise ConfigurationError("umask value must be in range from 000 to 777 oct or -1")
         if self.cwd and not os.path.exists(self.cwd):
             raise ConfigurationError(
                 f"Error opening cwd file {self.cwd}. Argument must be a valid file path."
