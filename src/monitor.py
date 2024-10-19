@@ -30,13 +30,13 @@ class Task:
     def __repr__(self):
         return f"<Task '{self.program.cmd}' in status {self.status} with pid {self.process.pid if self.process else '?'}>"
 
-
     def start(self):
         """Start the program. Status becomes STARTING."""
         if self.process and self.process.poll() is None:
             raise TaskError("Task has already started.")
         self.rebooting = False
         self.start_time = time.time()
+        stdout, stderr = None, None
         try:
             stdout = open(self.program.stdout, "a") if self.program.stdout else None
             stderr = open(self.program.stderr, "a") if self.program.stderr else None
@@ -48,17 +48,17 @@ class Task:
                     env=self.program.env,
                     umask=self.program.umask,
             )
-            if self.program.stdout:
-                stdout.close()
-            if self.program.stderr:
-                stderr.close()
-
             self.status = "STARTING"
         except Exception as e:
             self.logger.error(
                 f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
             raise TaskError(
                 f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
+        finally:
+            if stdout:
+                stdout.close()
+            if stderr:
+                stderr.close()
 
     def check_start(self):
         """Check if the program has started."""

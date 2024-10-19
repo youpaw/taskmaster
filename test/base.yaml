@@ -53,6 +53,16 @@ programs:
     stdout: /tmp/signal_output
     stderr: /tmp/signal_err
 
+  signal_stop:
+    cmd: 'python3 test/return_codes.py -t 120 -rc 123 -s 10'
+    autostart: False
+    autorestart: "unexpected"
+    numprocs: 1
+    startsecs: 5
+    stopsignal: 10
+    stdout: /tmp/signal_output
+    stderr: /tmp/signal_err
+
   wrong_command:
     cmd: 'this_command_does_not_exist'
     autostart: False
