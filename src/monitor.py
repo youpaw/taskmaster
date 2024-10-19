@@ -97,8 +97,8 @@ class Task:
             self.status = "KILLED"
             self.logger.info(f"Program '{self.program.cmd}' failed to stop, killing process.")
             self.process.kill()
+            self.process.wait()
             self.logger.info(f"Program '{self.program.cmd}' process was killed.")
-            # ToDo check if we should wait for the process kill
 
     def check_running(self):
         """Check if the program is running."""
