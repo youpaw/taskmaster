@@ -30,22 +30,35 @@ class Task:
     def __repr__(self):
         return f"<Task '{self.program.cmd}' in status {self.status} with pid {self.process.pid if self.process else '?'}>"
 
-
     def start(self):
         """Start the program. Status becomes STARTING."""
         if self.process and self.process.poll() is None:
             raise TaskError("Task has already started.")
-        self.status = "STARTING"
         self.rebooting = False
         self.start_time = time.time()
-        self.process = subprocess.Popen(
-                args=self.program.args,
-                cwd=self.program.cwd,
-                stdout=open(self.program.stdout, "a") if self.program.stdout else None,
-                stderr=open(self.program.stderr, "a") if self.program.stderr else None,
-                env=self.program.env,
-                umask=self.program.umask,
-        )
+        stdout, stderr = None, None
+        try:
+            stdout = open(self.program.stdout, "a") if self.program.stdout else None
+            stderr = open(self.program.stderr, "a") if self.program.stderr else None
+            self.process = subprocess.Popen(
+                    args=self.program.args,
+                    cwd=self.program.cwd,
+                    stdout=stdout,
+                    stderr=stderr,
+                    env=self.program.env,
+                    umask=self.program.umask,
+            )
+            self.status = "STARTING"
+        except Exception as e:
+            self.logger.error(
+                f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
+            raise TaskError(
+                f"Failed to create subprocess '{self.program.cmd}' with error: {e}")
+        finally:
+            if stdout:
+                stdout.close()
+            if stderr:
+                stderr.close()
 
     def check_start(self):
         """Check if the program has started."""
@@ -258,7 +271,7 @@ class Monitor:
             self._create_task(name, new_progs[name])
         # Process removed programs
         removed_ids = old_ids - new_ids
-        self.logger.debug(f"Removed programs: {removed_ids}")
+        self.logger.debug(f"Removed programs: {removed_ids or '0'}")
         for name in removed_ids:
             self.logger.info(f"Removing program '{name}'.")
             self._retire_task(name)
@@ -275,7 +288,10 @@ class Monitor:
     def _create_task(self, name, program: Program):
         self.tasks[name] = task = Task(program)
         if program.autostart:
-            task.start()
+            try:
+                task.start()
+            except TaskError as e:
+                self.logger.error(f"Failed to autostart program '{name}': {e}")
         self.active_tasks.add(name)
 
     def _retire_task(self, name: str):
